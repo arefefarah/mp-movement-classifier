@@ -1,0 +1,156 @@
+[tool.poetry]
+name = "mp-movement-classifier"
+version = "0.1.0"
+description = "Temporal Movement Primitives extraction and classification from motion capture data"
+authors = ["arefe00.farahmandi@gmail.com"
+    ]
+readme = "README.md"
+packages = [
+    {include = "mp_movement_classifier"},
+    {include = "bvh_converter"}
+]
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.14"
+
+# Core Scientific Computing
+numpy = "^2.2.6"
+pandas = "^2.3.1"
+scipy = "^1.15.3"
+
+# Machine Learning
+scikit-learn = "^1.7.2"
+torch = "^2.8.0"
+
+# BVH & Motion Capture
+bvh = "^0.3"
+
+# Computer Vision
+opencv-python = "^4.12.0"
+
+# Visualization
+matplotlib = "^3.10.5"
+seaborn = "^0.13.2"
+
+# Data Handling & Utilities
+pyyaml = "^6.0.2"
+joblib = "^1.5.2"
+json5 = "^0.12.1"
+
+# CLI
+click = "^8.0"
+
+# Progress bars
+# tqdm can be added if needed
+
+# Jupyter & Notebooks
+jupyter = "^1.0.0"
+jupyterlab = "^4.4.5"
+notebook = "^7.4.5"
+ipykernel = "^6.29.5"
+ipython = "^8.37.0"
+
+# Network utilities (for potential data downloading)
+requests = "^2.32.4"
+httpx = "^0.28.1"
+
+# Type hints (if used)
+pandas-stubs = "^2.3.0"
+
+[tool.poetry.group.dev.dependencies]
+# Testing
+pytest = "^7.4.0"
+pytest-cov = "^4.1.0"
+pytest-mock = "^3.11.0"
+
+# Code Quality
+black = "^23.7.0"
+isort = "^5.12.0"
+flake8 = "^6.1.0"
+mypy = "^1.5.0"
+
+# Jupyter notebook support
+ipywidgets = "^8.1.0"
+#
+#[tool.poetry.scripts]
+## BVH Conversion
+#convert-bvh = "scripts.convert_to_bvh:main"
+#
+## TMP Extraction & Classification
+#extract-primitives = "scripts.extract_primitives:main"
+#train-classifier = "scripts.train_classifier:main"
+#evaluate-model = "scripts.evaluate_model:main"
+#
+## Pipeline
+#run-pipeline = "scripts.run_pipeline:main"
+#
+## Config utilities
+#generate-config = "scripts.utils.generate_tmp_config:main"
+#
+#[build-system]
+#requires = ["poetry-core"]
+#build-backend = "poetry.core.masonry.api"
+#
+#[tool.pytest.ini_options]
+#testpaths = ["tests"]
+#python_files = ["test_*.py"]
+#python_functions = ["test_*"]
+#addopts = """
+#    -v
+#    --cov=mp_movement_classifier
+#    --cov-report=html
+#    --cov-report=term-missing
+#    --ignore=bvh_converter
+#"""
+#markers = [
+#    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+#    "integration: marks tests as integration tests",
+#]
+
+[tool.black]
+line-length = 88
+target-version = ['py39', 'py310', 'py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | build
+  | dist
+  | bvh_converter
+  | data
+  | results
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 88
+skip_gitignore = true
+known_first_party = ["mp_movement_classifier"]
+known_third_party = ["bvh", "cv2", "torch"]
+sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+exclude = [
+    "bvh_converter/",
+    "build/",
+    "dist/",
+]
+
+[[tool.mypy.overrides]]
+module = [
+    "bvh.*",
+    "cv2.*",
+    "scipy.*",
+]
