@@ -6,14 +6,12 @@ import json
 import torch
 import os
 import numpy as np
-
-from TMP_model import MP_model
-from mp_movement_classifier.utils import config
-
 import re
 from bvh import Bvh
 from scipy.signal import find_peaks
 
+from TMP_model import MP_model
+from mp_movement_classifier.utils import config
 
 
 H36M_KEYPOINT_NAMES = [
@@ -157,14 +155,13 @@ def filter_motion_data(data, cutoff_freq=6, sampling_rate=30):
     filtered_data = signal.filtfilt(b, a, data)
     return filtered_data
 
-def process_bvh_data(bvh_data, motion_ids, num_points=50,cutoff_freq=3):
+def process_bvh_data(bvh_data, motion_ids, cutoff_freq=3):
     """
     Apply 4th order Butterworth filter and segmentation as specified in Leh et al. (2023)
 
     Args:
         bvh_data: list of BVH mocap objects
         motion_ids: list of motion IDs corresponding to each BVH sequence
-        num_points: not used in current implementation
 
     Returns:
         processed_segments: list of segmented motion data in [signals, time] format

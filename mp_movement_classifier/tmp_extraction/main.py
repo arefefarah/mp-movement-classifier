@@ -174,7 +174,7 @@ def main() -> None:
     print(f"Reading BVH files from: {data_dir}")
     bvh_data, motion_ids = read_bvh_files(data_dir)
 
-    # Preprocess data
+    # Preprocess data including the segmentation step
     print(f"Processing BVH data with cutoff frequency: {args.cutoff_freq}")
     processed_data, segment_motion_ids = process_bvh_data(
         bvh_data,

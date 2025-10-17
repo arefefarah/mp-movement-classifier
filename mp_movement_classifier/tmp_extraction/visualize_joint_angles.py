@@ -203,7 +203,7 @@ def calculate_smoothing_metrics(original_data, smoothed_data):
     return metrics
 
 
-def visualize_joint_angles_with_smoothing(file_path, target_joints=None, apply_smoothing=True,
+def visualize_joint_angles_with_smoothing(bvh_filename, target_joints=None, apply_smoothing=True,
                                           cutoff_freq=6.0, filter_order=6):
     """
     Robust visualization with optional Butterworth smoothing
@@ -212,7 +212,9 @@ def visualize_joint_angles_with_smoothing(file_path, target_joints=None, apply_s
         target_joints = ['LeftWrist', 'RightWrist', 'LeftKnee', 'RightKnee', 'LeftAnkle']
 
     # Parse BVH file
+    file_path = f"../../data/bvh_files/{bvh_filename}.bvh"
     joints, motion_data, frame_time, frames = parse_bvh_robust(file_path)
+    print(frame_time)
 
     if joints is None:
         return None, None, None, None
@@ -318,98 +320,44 @@ def visualize_joint_angles_with_smoothing(file_path, target_joints=None, apply_s
 
     # Save plot with appropriate filename
     suffix = f"_smoothed_{cutoff_freq}Hz" if apply_smoothing else "_original"
-    output_filename = f"figures/subject_1_motion_02_joint_angles{suffix}.png"
-    plt.savefig(output_filename, dpi=300, bbox_inches='tight')
-    print(f"\n📊 Plot saved as: {output_filename}")
+    figures_dir = os.path.join("./../../results", 'joints_visualizations')
+    os.makedirs(figures_dir, exist_ok=True)
+    plt.savefig(os.path.join(figures_dir, f"{bvh_filename}_joint_angles{suffix}.png"),dpi=300, bbox_inches='tight')
+    print(f"\n📊 Plot saved as: {figures_dir}")
 
     plt.close()
-
-    # # Print detailed statistics
-    # print(f"\n{'=' * 80}")
-    # print("DETAILED JOINT ANGLE STATISTICS" + (" - WITH SMOOTHING COMPARISON" if apply_smoothing else ""))
-    # print(f"{'=' * 80}")
-    #
-    # for joint_name in valid_joints:
-    #     original_angles = extract_joint_angles_robust(joints, motion_data, joint_name)
-    #     smoothed_angles = None
-    #     if smoothed_data is not None:
-    #         smoothed_angles = extract_joint_angles_robust(joints, smoothed_data, joint_name)
-    #
-    #     if original_angles:
-    #         print(f"\n🦴 {joint_name}:")
-    #         print("-" * 60)
-    #
-    #         for channel, original_data in original_angles.items():
-    #             print(f"\n  📈 {channel}:")
-    #
-    #             # Original statistics
-    #             orig_mean = np.mean(original_data)
-    #             orig_std = np.std(original_data)
-    #             orig_min = np.min(original_data)
-    #             orig_max = np.max(original_data)
-    #             orig_range = orig_max - orig_min
-    #
-    #             print(f"    Original : Mean={orig_mean:7.1f}° | Std={orig_std:6.1f}° | "
-    #                   f"Range=[{orig_min:6.1f}, {orig_max:6.1f}]° | Span={orig_range:6.1f}°")
-    #
-    #             # Smoothed statistics if available
-    #             if smoothed_angles and channel in smoothed_angles:
-    #                 smoothed_data_ch = smoothed_angles[channel]
-    #                 smooth_mean = np.mean(smoothed_data_ch)
-    #                 smooth_std = np.std(smoothed_data_ch)
-    #                 smooth_min = np.min(smoothed_data_ch)
-    #                 smooth_max = np.max(smoothed_data_ch)
-    #                 smooth_range = smooth_max - smooth_min
-    #
-    #                 print(f"    Smoothed : Mean={smooth_mean:7.1f}° | Std={smooth_std:6.1f}° | "
-    #                       f"Range=[{smooth_min:6.1f}, {smooth_max:6.1f}]° | Span={smooth_range:6.1f}°")
-    #
-    #                 # Improvement metrics
-    #                 metrics = calculate_smoothing_metrics(original_data, smoothed_data_ch)
-    #                 print(f"    Improvement: RMSE={metrics['RMSE']:.3f}° | "
-    #                       f"Correlation={metrics['Correlation']:.3f} | "
-    #                       f"Noise↓={metrics['Noise_Reduction_%']:.1f}%")
-    #
-    #                 # Quality assessment
-    #                 if metrics['Correlation'] > 0.99:
-    #                     print(f"    Excellent preservation of signal shape")
-    #                 elif metrics['Correlation'] > 0.95:
-    #                     print(f"    Good preservation of signal shape")
-    #                 elif metrics['Correlation'] > 0.90:
-    #                     print(f"    ️ Moderate signal preservation")
-    #                 else:
-    #                     print(f"    ️ Signal may be over-smoothed")
 
     return joints, motion_data, frame_time, frames, smoothed_data
 
 
-# def main():
-#     bvh_file = "../../data/video2bvh/bvh_files/subject_1_motion_02.bvh"
-#
-#     # Customize these joints based on what you want to analyze
-#     joints_to_analyze = ['LeftWrist', 'RightWrist', 'LeftKnee', 'RightKnee', 'LeftAnkle']
-#
-#     print(" BVH Joint Angle Analysis with Butterworth Smoothing")
-#     print("=" * 80)
-#
-#     # First, visualize original data
-#     print("\nStep 1: Analyzing original data...")
-#     result_original = visualize_joint_angles_with_smoothing(
-#         bvh_file,
-#         joints_to_analyze,
-#         apply_smoothing=False
-#     )
-#
-#     # Then, apply smoothing and visualize
-#     print("\n Step 2: Applying Butterworth smoothing and comparing...")
-#     result_smoothed = visualize_joint_angles_with_smoothing(
-#         bvh_file,
-#         joints_to_analyze,
-#         apply_smoothing=True,
-#         cutoff_freq=6.0,  # 6 Hz as recommended by research
-#         filter_order=6  # Sixth-order as recommended
-#     )
-#
-# if __name__ == "__main__":
-#     main()
+def main():
+
+    bvh_filename = "subject_2_motion_04"
+    bvh_file = f"../../data/bvh_files/{bvh_filename}.bvh"
+
+    # Customize these joints based on what you want to analyze
+    joints_to_analyze = ['LeftWrist', 'RightWrist', 'LeftKnee', 'RightKnee', 'LeftAnkle']
+
+    print(" BVH Joint Angle Analysis with Butterworth Smoothing")
+    print("=" * 80)
+
+    # visualize original data without smoothing
+    # result_original = visualize_joint_angles_with_smoothing(
+    #     bvh_file,
+    #     joints_to_analyze,
+    #     apply_smoothing=False
+    # )
+
+    # Apply smoothing and visualize
+    print("\n Applying Butterworth smoothing and comparing with original data... ...")
+    result_smoothed = visualize_joint_angles_with_smoothing(
+        bvh_filename,
+        joints_to_analyze,
+        apply_smoothing=True,
+        cutoff_freq=3.0,  # 6 Hz as recommended by research
+        filter_order=4
+    )
+
+if __name__ == "__main__":
+    main()
 
