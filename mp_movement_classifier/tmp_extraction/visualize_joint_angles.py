@@ -6,7 +6,8 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from scipy import signal
-from scipy.signal import butter, filtfilt
+from scipy.signal import butter, filtfilt,welch
+from scipy.signal import find_peaks
 import warnings
 
 
@@ -149,6 +150,160 @@ def apply_butterworth_smoothing(motion_data, frame_time, cutoff_freq=6.0, filter
             smoothed_data[:, channel] = filtfilt(b, a, motion_data[:, channel])
 
     return smoothed_data
+
+
+def compute_joint_speed(motion_data, joints, frame_time, wrist_joints=['LeftWrist', 'RightWrist'],
+                        ankle_joints=['LeftAnkle', 'RightAnkle']):
+    """
+    Compute speed of specified joints
+
+    Args:
+        motion_data: Smoothed motion capture data
+        joints: Joint mapping from BVH parser
+        frame_time: Time between frames
+        wrist_joints: List of wrist joint names
+        ankle_joints: List of ankle joint names
+
+    Returns:
+        Joint speed array
+    """
+    # Initialize speed array
+    joint_speeds = np.zeros(motion_data.shape[0])
+
+    # Compute speeds for wrist and ankle joints
+    for joint_name in wrist_joints + ankle_joints:
+        if joint_name not in joints:
+            print(f"Warning: Joint {joint_name} not found. Skipping.")
+            continue
+
+        # Extract joint angles
+        joint_angles = extract_joint_angles_robust(joints, motion_data, joint_name)
+
+        if joint_angles is None:
+            continue
+
+        # Compute derivative (speed) for each rotation channel
+        for channel, angles in joint_angles.items():
+            # Compute speed using numerical differentiation
+            joint_speed = np.abs(np.gradient(angles) / frame_time)
+            joint_speeds += joint_speed
+
+    return joint_speeds
+
+
+def segment_motion_trajectories(bvh_filename, motion_data, joints, frame_time,
+                                target_joints=None,
+                                wrist_joints=['LeftWrist', 'RightWrist'],
+                                ankle_joints=['LeftAnkle', 'RightAnkle'],
+                                min_boundary_distance=0.160):  # 160 ms
+    """
+    Segment motion trajectories based on joint speed and visualize full joint trajectories
+
+    Args:
+        bvh_filename: Name of BVH file for saving plot
+        motion_data: Smoothed motion capture data
+        joints: Joint mapping from BVH parser
+        frame_time: Time between frames
+        target_joints: List of joints to plot (if None, use wrist and ankle joints)
+        wrist_joints: List of wrist joint names for speed computation
+        ankle_joints: List of ankle joint names for speed computation
+        min_boundary_distance: Minimum distance between boundaries in seconds
+
+    Returns:
+        Tuple of (segments, boundary_frames, joint_speeds)
+    """
+    # Set default target joints if not provided
+    if target_joints is None:
+        target_joints = wrist_joints + ankle_joints + ['Hip', 'Spine', 'Thorax']
+
+    # Compute joint speeds
+    joint_speeds = compute_joint_speed(motion_data, joints, frame_time,
+                                       wrist_joints, ankle_joints)
+
+    # Minimum distance in frames
+    min_frames = int(min_boundary_distance / frame_time)
+
+    # Find speed minima as potential segment boundaries
+    peaks, _ = find_peaks(-joint_speeds, distance=min_frames, prominence=0.5)
+
+    # Add start and end frames
+    boundary_frames = [0] + list(peaks) + [len(joint_speeds) - 1]
+    boundary_frames.sort()
+
+    # Create segments
+    segments = [boundary_frames[i:i + 2] for i in range(len(boundary_frames) - 1)]
+
+    # Create time vector
+    time_vector = np.arange(len(joint_speeds)) * frame_time
+
+    # Create plots
+    fig, axes = plt.subplots(len(target_joints), 1, figsize=(16, 5 * len(target_joints)))
+    if len(target_joints) == 1:
+        axes = [axes]
+
+    # Color palette
+    colors = ['red', 'green', 'blue', 'orange', 'purple', 'brown']
+
+    # Iterate through target joints
+    for i, joint_name in enumerate(target_joints):
+        # Skip if joint not in joints
+        if joint_name not in joints:
+            print(f"Warning: Joint {joint_name} not found. Skipping.")
+            continue
+
+        # Extract joint angles
+        joint_angles = extract_joint_angles_robust(joints, motion_data, joint_name)
+
+        if joint_angles is None:
+            continue
+
+        ax = axes[i]
+        ax.set_title(f'{joint_name} Joint Angles with Motion Segments',
+                     fontsize=16, fontweight='bold')
+
+        # Plot each rotation channel
+        for j, (channel, angle_data) in enumerate(joint_angles.items()):
+            color = colors[j % len(colors)]
+            ax.plot(time_vector, angle_data,
+                    color=color,
+                    label=f'{channel}',
+                    linewidth=1.5,
+                    alpha=0.7)
+
+        # Plot segment boundaries
+        for boundary in boundary_frames[1:-1]:  # Exclude first and last
+            ax.axvline(x=time_vector[boundary], color='r', linestyle='--', alpha=0.7)
+
+        # Highlight segments with different colors
+        segment_colors = plt.cm.viridis(np.linspace(0, 1, len(segments)))
+        for j, segment in enumerate(segments):
+            start_time = time_vector[segment[0]]
+            end_time = time_vector[segment[1]]
+            ax.axvspan(start_time, end_time, color=segment_colors[j], alpha=0.2,
+                       label=f'Segment {j + 1}')
+
+        ax.set_xlabel('Time (seconds)', fontsize=12)
+        ax.set_ylabel('Angle (degrees)', fontsize=12)
+        ax.legend(fontsize=10, loc='best')
+        ax.grid(True, alpha=0.3)
+        ax.set_xlim(0, time_vector[-1])
+
+    plt.tight_layout()
+
+    # Save plot
+    figures_dir = os.path.join("./../../results", 'motion_segmentation')
+    os.makedirs(figures_dir, exist_ok=True)
+    plt.savefig(os.path.join(figures_dir, f"{bvh_filename}_joint_trajectories_segmentation.png"),
+                dpi=300, bbox_inches='tight')
+    plt.close()
+
+    # Print segment information
+    print("\nMotion Segments:")
+    for i, segment in enumerate(segments, 1):
+        print(f"Segment {i}: Frames {segment[0]}-{segment[1]} "
+              f"(Time: {time_vector[segment[0]]:.2f}s - {time_vector[segment[1]]:.2f}s)")
+
+    return segments, boundary_frames, joint_speeds
 
 
 def extract_joint_angles_robust(joints, motion_data, joint_name):
@@ -330,9 +485,156 @@ def visualize_joint_angles_with_smoothing(bvh_filename, target_joints=None, appl
     return joints, motion_data, frame_time, frames, smoothed_data
 
 
+def calculate_power_spectrum(signal_data, sampling_rate, nperseg=None):
+    """
+    Calculate power spectral density using Welch's method
+
+    Args:
+        signal_data: 1D numpy array of time-domain signal
+        sampling_rate: Sampling frequency in Hz
+        nperseg: Length of each segment in welch's method (default: use signal length/8)
+
+    Returns:
+        frequencies: Frequency bins
+        power_spectrum: Power spectral density
+    """
+    # If nperseg not specified, use default Welch recommendation
+    if nperseg is None:
+        nperseg = min(len(signal_data), max(256, len(signal_data) // 8))
+
+    # Compute power spectral density
+    frequencies, power_spectrum = welch(signal_data,
+                                        fs=sampling_rate,
+                                        nperseg=nperseg)
+
+    return frequencies, power_spectrum
+
+
+def analyze_filtering_impact(motion_data, frame_time, joints, target_joints=None,
+                             cutoff_frequencies=[3.0, 6.0, 10.0], filter_order=6):
+    """
+    Analyze power spectrum before and after filtering with different cutoff frequencies
+
+    Args:
+        motion_data: numpy array of motion data [frames, channels]
+        frame_time: time between frames in seconds
+        joints: dict of joint mappings from BVH parser
+        target_joints: list of joints to analyze (optional)
+        cutoff_frequencies: list of cutoff frequencies to test
+        filter_order: order of Butterworth filter
+
+    Returns:
+        Visualization of power spectra for each channel
+    """
+    # Set default target joints if not provided
+    if target_joints is None:
+        target_joints = ['LeftWrist', 'RightWrist', 'LeftKnee', 'RightKnee', 'LeftAnkle']
+
+    # Calculate sampling frequency
+    sampling_rate = 1.0 / frame_time
+    nyquist_freq = sampling_rate / 2.0
+
+    # Filter target joints to only those that exist
+    valid_joints = [j for j in target_joints if j in joints]
+    invalid_joints = [j for j in target_joints if j not in joints]
+
+    if invalid_joints:
+        print(f"\nSkipping non-existent joints: {invalid_joints}")
+
+    if not valid_joints:
+        print("No valid joints found to analyze")
+        return None
+
+    # Collect channel indices for valid joints
+    joint_channels = {}
+    for joint_name in valid_joints:
+        joint_info = joints[joint_name]
+        start_idx = joint_info['start_index']
+        channels = joint_info['channels']
+
+        # Store channel indices for this joint's rotations
+        joint_channels[joint_name] = {
+            'start_index': start_idx,
+            'channel_indices': [start_idx + i for i in range(len(channels))
+                                if 'rotation' in channels[i].lower()]
+        }
+
+    # Color palette
+    colors = plt.cm.viridis(np.linspace(0, 1, len(cutoff_frequencies)))
+
+    # Process each channel
+    for channel_idx in range(motion_data.shape[1]):
+        # Create a new figure for this specific channel
+        plt.figure(figsize=(10, 6))
+
+        # Original signal power spectrum
+        orig_signal = motion_data[:, channel_idx]
+        orig_freq, orig_psd = calculate_power_spectrum(orig_signal, sampling_rate)
+
+        # Plot original signal's power spectrum
+        plt.semilogy(orig_freq, orig_psd,
+                     label='Original Signal',
+                     color='black')
+
+        # Process for different cutoff frequencies
+        for k, cutoff_freq in enumerate(cutoff_frequencies):
+            # Validate and adjust cutoff frequency
+            if cutoff_freq >= nyquist_freq:
+                cutoff_freq = nyquist_freq * 0.8
+
+            # Normalize cutoff frequency
+            normalized_cutoff = cutoff_freq / nyquist_freq
+
+            # Design Butterworth filter
+            b, a = butter(filter_order, normalized_cutoff, btype='low', analog=False)
+
+            # Apply filter
+            filtered_signal = filtfilt(b, a, orig_signal)
+
+            # Compute power spectrum of filtered signal
+            filt_freq, filt_psd = calculate_power_spectrum(filtered_signal, sampling_rate)
+
+            # Plot filtered signal's power spectrum
+            plt.semilogy(filt_freq, filt_psd,
+                         label=f'Filtered (Cutoff {cutoff_freq:.1f} Hz)',
+                         color=colors[k])
+
+            # Add vertical line at cutoff frequency
+            plt.axvline(x=cutoff_freq, color='r', linestyle='--', alpha=0.5)
+
+        # Try to get joint name for this channel
+        channel_joint = "Unknown Channel"
+        for joint_name, joint_info in joints.items():
+            start_idx = joint_info['start_index']
+            num_channels = len(joint_info['channels'])
+            if start_idx <= channel_idx < start_idx + num_channels:
+                channel_index_in_joint = channel_idx - start_idx
+                channel_name = joint_info['channels'][channel_index_in_joint]
+                channel_joint = f"{joint_name} {channel_name}"
+                break
+
+        # Formatting
+        plt.title(f'Channel {channel_idx}: {channel_joint} Power Spectrum')
+        plt.xlabel('Frequency (Hz)')
+        plt.ylabel('Power/Frequency')
+        plt.grid(True)
+        plt.legend()
+
+        # Save figure
+        figures_dir = os.path.join("./../../results", 'power_spectrum')
+        os.makedirs(figures_dir, exist_ok=True)
+        plt.savefig(os.path.join(figures_dir,
+                                 f'channel_{channel_idx}_{channel_joint.replace(" ", "_")}_power_spectrum.png'),
+                    dpi=300,
+                    bbox_inches='tight')
+        plt.close()
+
+    return None
+
+
 def main():
 
-    bvh_filename = "subject_2_motion_04"
+    bvh_filename = "subject_71_motion_07"
     bvh_file = f"../../data/bvh_files/{bvh_filename}.bvh"
 
     # Customize these joints based on what you want to analyze
@@ -349,15 +651,41 @@ def main():
     # )
 
     # Apply smoothing and visualize
-    print("\n Applying Butterworth smoothing and comparing with original data... ...")
-    result_smoothed = visualize_joint_angles_with_smoothing(
-        bvh_filename,
-        joints_to_analyze,
-        apply_smoothing=True,
-        cutoff_freq=3.0,  # 6 Hz as recommended by research
-        filter_order=4
+    # print("\n Applying Butterworth smoothing and comparing with original data... ...")
+    # result_smoothed = visualize_joint_angles_with_smoothing(
+    #     bvh_filename,
+    #     joints_to_analyze,
+    #     apply_smoothing=True,
+    #     cutoff_freq=3.0,  # 6 Hz as recommended by research
+    #     filter_order=4
+    # )
+
+    joints, motion_data, frame_time, frames = parse_bvh_robust(f"../../data/bvh_files/{bvh_filename}.bvh")
+
+    ### For signal cutoff frequenccy analysis and optimal choice
+
+    analyze_filtering_impact(
+        motion_data,
+        frame_time,
+        joints,
+        target_joints=joints_to_analyze,
+        cutoff_frequencies=[3.0, 6.0, 10.0],
+        filter_order=6
     )
+
+    ### For segmentation visualization
+
+    # # Optional: Apply smoothing
+    # smoothed_motion_data = apply_butterworth_smoothing(motion_data, frame_time)
+    #
+    # # Segment motion
+    # segments, boundaries, speeds = segment_motion_trajectories(
+    #     bvh_filename,
+    #     smoothed_motion_data,
+    #     joints,
+    #     frame_time,
+    #     target_joints=['LeftWrist', 'RightWrist', 'LeftKnee', 'RightKnee', 'Hip']  # Customize as needed
+    # )
 
 if __name__ == "__main__":
     main()
-

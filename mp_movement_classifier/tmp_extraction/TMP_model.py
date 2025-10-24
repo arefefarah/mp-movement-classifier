@@ -12,8 +12,9 @@ import torch.distributions
 import torch.optim
 
 import scipy.signal
-import torch_hessian
+# import torch_hessian
 import numpy
+from mp_movement_classifier.tmp_extraction.torch_hessian import *
 # from movement_primitives.movement_classifier.src.torch_hessian import *
 from collections import OrderedDict
 

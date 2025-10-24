@@ -38,15 +38,15 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def prepare_save_paths(num_mps: int, cutoff_freq: float, model_name_suffix: Optional[str]) -> Tuple[str, str, str]:
+def prepare_save_paths(num_mps: int, cutoff_freq: float, num_t_points: int, model_name_suffix: Optional[str]) -> Tuple[str, str, str]:
     """
     Prepare save paths for model and figures.
     """
     # Organize outputs under a dedicated directory
-    model_dir = os.path.join(config.SAVING_DIR, f"mp_model_{num_mps}_cutoff_{cutoff_freq}")
+    model_dir = os.path.join(config.SAVING_DIR, f"new_seg_mp_model_{num_mps}_cutoff_{cutoff_freq}_tpoints_{num_t_points}")
     os.makedirs(model_dir, exist_ok=True)
 
-    model_name = f"mp_model_{num_mps}_PC_init_cutoff_{cutoff_freq}"
+    model_name = f"mp_model_{num_mps}_PC_init_cutoff_{cutoff_freq}_tpoints_{num_t_points}"
     if model_name_suffix:
         model_name = f"{model_name}_{model_name_suffix}"
 
@@ -151,13 +151,13 @@ def evaluate_and_plot(
     lc = model.learn_curve
     vc = model.VAF_curve
     epochs = np.arange(len(lc))
-    plot_learn_curve(epochs, lc, vc, f"student_{tail_window:d}, PCA init", save=True)
+    plot_learn_curve(epochs, lc, vc, f"TMP model with PCA init", save=True)
     if tail_window > 0 and len(epochs) > tail_window:
         plot_learn_curve(
             epochs[-tail_window:],
             lc[-tail_window:],
             vc[-tail_window:],
-            f"student_{tail_window:d}, PCA init, tail",
+            f"tail of {tail_window:d}, PCA init",
             save=True,
         )
 
@@ -191,7 +191,7 @@ def main() -> None:
     print(f"num of signal   : {num_signals}")
 
     # Prepare save paths (now returns model_dir as well)
-    model_name, model_path, model_dir = prepare_save_paths(args.num_mps, args.cutoff_freq, model_name_suffix)
+    model_name, model_path, model_dir = prepare_save_paths(args.num_mps, args.cutoff_freq, args.num_t_points, model_name_suffix)
 
     # Initialize or load model
     model = initialize_or_load_model(
