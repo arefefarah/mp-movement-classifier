@@ -103,7 +103,7 @@ def parse_bvh_robust(file_path):
     return joints, motion_data, frame_time, frames
 
 
-def apply_butterworth_smoothing(motion_data, frame_time, cutoff_freq=6.0, filter_order=6):
+def apply_butterworth_smoothing(motion_data, cutoff_freq=6.0, filter_order=6):
     """
     Apply sixth-order Butterworth filter to motion capture data
 
@@ -114,7 +114,6 @@ def apply_butterworth_smoothing(motion_data, frame_time, cutoff_freq=6.0, filter
 
     Args:
         motion_data: numpy array of shape (frames, channels)
-        frame_time: time between frames in seconds
         cutoff_freq: cutoff frequency in Hz (default 6.0)
         filter_order: filter order (default 6)
 
@@ -123,7 +122,7 @@ def apply_butterworth_smoothing(motion_data, frame_time, cutoff_freq=6.0, filter
     """
 
     # Calculate sampling frequency
-    sampling_freq = 1.0 / frame_time
+    sampling_freq = 30
     nyquist_freq = sampling_freq / 2.0
 
     # Validate cutoff frequency
@@ -510,14 +509,13 @@ def calculate_power_spectrum(signal_data, sampling_rate, nperseg=None):
     return frequencies, power_spectrum
 
 
-def analyze_filtering_impact(motion_data, frame_time, joints, target_joints=None,
+def analyze_filtering_impact(motion_data, joints, target_joints=None,
                              cutoff_frequencies=[3.0, 6.0, 10.0], filter_order=6):
     """
     Analyze power spectrum before and after filtering with different cutoff frequencies
 
     Args:
         motion_data: numpy array of motion data [frames, channels]
-        frame_time: time between frames in seconds
         joints: dict of joint mappings from BVH parser
         target_joints: list of joints to analyze (optional)
         cutoff_frequencies: list of cutoff frequencies to test
@@ -531,7 +529,7 @@ def analyze_filtering_impact(motion_data, frame_time, joints, target_joints=None
         target_joints = ['LeftWrist', 'RightWrist', 'LeftKnee', 'RightKnee', 'LeftAnkle']
 
     # Calculate sampling frequency
-    sampling_rate = 1.0 / frame_time
+    sampling_rate = 30
     nyquist_freq = sampling_rate / 2.0
 
     # Filter target joints to only those that exist
@@ -666,17 +664,16 @@ def main():
 
     analyze_filtering_impact(
         motion_data,
-        frame_time,
         joints,
         target_joints=joints_to_analyze,
         cutoff_frequencies=[3.0, 6.0, 10.0],
-        filter_order=6
+        filter_order=4
     )
 
     ### For segmentation visualization
 
     # # Optional: Apply smoothing
-    # smoothed_motion_data = apply_butterworth_smoothing(motion_data, frame_time)
+    # smoothed_motion_data = apply_butterworth_smoothing(motion_data)
     #
     # # Segment motion
     # segments, boundaries, speeds = segment_motion_trajectories(
