@@ -8,9 +8,9 @@ import os
 import numpy as np
 import re
 from bvh import Bvh
-from scipy.signal import find_peaks
+from scipy.signal import butter, filtfilt, find_peaks
 
-from TMP_model import MP_model
+from mp_movement_classifier.tmp_extraction.TMP_model import MP_model
 from mp_movement_classifier.utils import config
 
 
@@ -91,36 +91,6 @@ def get_joint_channel_mapping():
     return joint_mapping
 
 
-def compute_movement_speed(data, joint_indices):
-    """
-    Compute movement speed for joints (angular velocity for rotation data)
-
-    Args:
-        data: motion data array [frames, channels]
-        joint_indices: list of channel indices for the joint
-
-    Returns:
-        speed: combined speed measure for the joint
-    """
-    if not joint_indices:
-        return np.zeros(data.shape[0])
-
-    # Calculate angular velocity (first derivative) for each rotation channel
-    speeds = []
-    for idx in joint_indices:
-        if idx < data.shape[1]:
-            # Angular velocity approximation
-            angular_velocity = np.gradient(data[:, idx])
-            speeds.append(np.abs(angular_velocity))
-
-    if speeds:
-        # Sum speeds across all channels for this joint
-        return np.sum(speeds, axis=0)
-    else:
-        return np.zeros(data.shape[0])
-
-
-
 def read_bvh_files(folder_path):
     bvh_data = []
     motion_ids = []
@@ -146,133 +116,304 @@ def read_bvh_files(folder_path):
             print(f"Error reading file {bvh_file}: {str(e)}")
     return bvh_data, motion_ids
 
-def filter_motion_data(data, cutoff_freq=6, sampling_rate=30):
-    """Apply 4th order Butterworth filter as specified in paper"""
-    nyquist_freq = 0.5 * sampling_rate
-    order = 4
-    # cutoff_freq = nyquist_freq * 0.8
-    b, a = signal.butter(order, cutoff_freq / nyquist_freq)
-    filtered_data = signal.filtfilt(b, a, data)
+
+def parse_bvh_robust(file_path):
+    """
+    Robust BVH parser that handles various format issues
+    """
+    with open(file_path, 'r') as file:
+        content = file.read()
+
+
+    # Split into hierarchy and motion sections
+    parts = content.split('MOTION')
+    if len(parts) < 2:
+        print("❌ Invalid BVH format: No MOTION section found")
+        return None, None, None, None
+
+    hierarchy = parts[0]
+    motion_part = parts[1]
+
+    # Extract joint information
+    joints = {}
+    channel_index = 0
+
+    # Find all joints and their channels
+    joint_pattern = r'(ROOT|JOINT)\s+(\w+)'
+    channel_pattern = r'CHANNELS\s+(\d+)\s+(.*)'
+
+    lines = hierarchy.split('\n')
+    current_joint = None
+
+    for line in lines:
+        line = line.strip()
+
+        # Find joint names
+        joint_match = re.search(joint_pattern, line)
+        if joint_match:
+            current_joint = joint_match.group(2)
+
+        # Find channels
+        channel_match = re.search(channel_pattern, line)
+        if channel_match and current_joint:
+            num_channels = int(channel_match.group(1))
+            channels = channel_match.group(2).split()
+
+            joints[current_joint] = {
+                'channels': channels,
+                'start_index': channel_index
+            }
+            channel_index += num_channels
+
+    # Extract motion data
+    motion_lines = motion_part.strip().split('\n')
+
+    # Get frame info
+    frames = 0
+    frame_time = 0.0
+
+    for line in motion_lines:
+        if line.startswith('Frames:'):
+            frames = int(line.split(':')[1].strip())
+        elif line.startswith('Frame Time:'):
+            frame_time = float(line.split(':')[1].strip())
+
+    if frames == 0:
+        print("❌ No frame information found in BVH file")
+        return None, None, None, None
+
+    # Extract frame data
+    frame_data = []
+
+    for line in motion_lines:
+        line = line.strip()
+        if line and not line.startswith('Frames') and not line.startswith('Frame Time'):
+            try:
+                values = [float(x) for x in line.split()]
+                frame_data.extend(values)
+            except ValueError:
+                continue
+
+    # Calculate expected total channels
+    total_channels = sum(len(joint['channels']) for joint in joints.values())
+    expected_data_points = total_channels * frames
+
+    if len(frame_data) < expected_data_points:
+        print(f"⚠️ Warning: Less data than expected. Using available frames.")
+        available_frames = len(frame_data) // total_channels
+        motion_data = np.array(frame_data[:available_frames * total_channels]).reshape(available_frames, total_channels)
+        frames = available_frames
+    else:
+        motion_data = np.array(frame_data[:expected_data_points]).reshape(frames, total_channels)
+
+    return joints, motion_data, frame_time, frames
+
+def extract_joint_angles_robust(joints, motion_data, joint_name):
+    """
+    Extract rotation angles for a specific joint with error handling
+    """
+    if joint_name not in joints:
+        available_joints = list(joints.keys())
+        print(f"Joint '{joint_name}' not found.")
+        print(f"Available joints: {available_joints}")
+        return None
+
+    joint_info = joints[joint_name]
+    start_idx = joint_info['start_index']
+    channels = joint_info['channels']
+
+    angles = {}
+    for i, channel in enumerate(channels):
+        if 'rotation' in channel.lower():
+            if start_idx + i < motion_data.shape[1]:
+                angles[channel] = motion_data[:, start_idx + i]
+            else:
+                print(f"Channel index out of range for {joint_name}.{channel}")
+
+    return angles if angles else None
+
+
+def compute_joint_speed(motion_data, joints, frame_time, wrist_joints=['LeftWrist', 'RightWrist'],
+                        ankle_joints=['LeftAnkle', 'RightAnkle']):
+    """
+    Compute speed of specified joints
+
+    Returns:
+        Joint speed array
+    """
+    # Initialize speed array
+    joint_speeds = np.zeros(motion_data.shape[0])
+
+    # Compute speeds for wrist and ankle joints
+    for joint_name in wrist_joints + ankle_joints:
+        if joint_name not in joints:
+            print(f"Warning: Joint {joint_name} not found. Skipping.")
+            continue
+
+        # Extract joint angles
+        joint_angles = extract_joint_angles_robust(joints, motion_data, joint_name)
+
+        if joint_angles is None:
+            continue
+
+        # Compute derivative (speed) for each rotation channel
+        for channel, angles in joint_angles.items():
+            # Compute speed using numerical differentiation
+            joint_speed = np.abs(np.gradient(angles) / frame_time)
+            joint_speeds += joint_speed
+
+    return joint_speeds
+
+
+def filter_motion_data(data, cutoff_freq=6.0, sampling_rate=None, filter_order=4):
+    """
+    Apply sixth-order zero-lag Butterworth filter to motion capture data
+
+    Args:
+        data: motion data array
+        cutoff_freq: cutoff frequency in Hz (default 6.0)
+        sampling_rate: frames per second (if None, inferred from data length/time)
+        filter_order: filter order (default 6)
+
+    Returns:
+        filtered_data: filtered motion data
+    """
+    # If sampling rate not provided, use a default or try to compute
+    if sampling_rate is None:
+        # Estimate sampling rate (assuming uniform sampling)
+        sampling_rate = 1.0 / (data.shape[0] * 0.033)  # Assuming ~30 fps if not specified
+
+    # Compute Nyquist frequency
+    nyquist_freq = sampling_rate / 2.0
+
+    # Validate cutoff frequency
+    if cutoff_freq >= nyquist_freq:
+        print(f"⚠️ Warning: Cutoff frequency ({cutoff_freq} Hz) is too high for sampling rate ({sampling_rate:.1f} Hz)")
+        cutoff_freq = nyquist_freq * 0.8  # Use 80% of Nyquist frequency
+        print(f"   Adjusting cutoff to {cutoff_freq:.1f} Hz")
+
+    # Normalize cutoff frequency
+    normalized_cutoff = cutoff_freq / nyquist_freq
+
+    # Design Butterworth filter
+    b, a = butter(filter_order, normalized_cutoff, btype='low', analog=False)
+
+    # Apply filter to each channel
+    filtered_data = np.zeros_like(data)
+
+    # Suppress warnings for small datasets
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+
+        for channel in range(data.shape[1]):
+            # Use filtfilt for zero-phase filtering (bidirectional)
+            filtered_data[:, channel] = filtfilt(b, a, data[:, channel])
+
     return filtered_data
 
-def process_bvh_data(bvh_data, motion_ids, cutoff_freq=3):
+def segment_motion_trajectories(motion_data, joints, frame_time,
+                                wrist_joints=['LeftWrist', 'RightWrist'],
+                                ankle_joints=['LeftAnkle', 'RightAnkle'],
+                                min_boundary_distance=0.160):  # 160 ms
     """
-    Apply 4th order Butterworth filter and segmentation as specified in Leh et al. (2023)
+    Segment motion trajectories based on joint speed and visualize full joint trajectories
+
+    Returns:
+        Tuple of (segments, boundary_frames, joint_speeds)
+    """
+    print("\n📊 Motion Segments")
+    # Compute joint speeds
+    joint_speeds = compute_joint_speed(motion_data, joints, frame_time,
+                                       wrist_joints, ankle_joints)
+    # print("joint speed:",joint_speeds)
+    # Minimum distance in frames
+    min_frames = int(min_boundary_distance / frame_time)
+    min_frames = 5 # i manually change it to 5 instead of 4
+    # min_frames for the paper was 160 milisecond for 120 Hz means 19 frames
+
+    print(f"Minimum distance in frames: {min_frames}")
+
+    # Find speed minima as potential segment boundaries
+    peaks, _ = find_peaks(-joint_speeds, distance=min_frames)
+    # print(f"Peaks: {peaks}")
+
+    # Add start and end frames
+    boundary_frames = [0] + list(peaks) + [len(joint_speeds) - 1]
+    # print(f"boundary_frames: {boundary_frames}")
+    boundary_frames.sort()
+
+    # Create segments
+    boundaries = [boundary_frames[i:i + 2] for i in range(len(boundary_frames) - 1)]
+    segments = [motion_data[boundary_frames[i]:boundary_frames[i + 1],:] for i in range(len(boundary_frames) - 1)]
+
+    # Create time vector
+    time_vector = np.arange(len(joint_speeds)) * frame_time
+
+
+    print(f"Duration of complete video : {len(joint_speeds)* frame_time} seconds")
+    print(f"Number of segments: {len(segments)}")
+    for i, segment in enumerate(segments, 1):
+        boundary = boundaries[i - 1]
+        print("segment shape",segment.shape)
+        print(f"   Segment {i}: Frames {boundary[0]}-{boundary[1]} ")
+        print(f"   Time: {time_vector[boundary[0]]} s - {time_vector[boundary[1]]} s")
+
+    return segments, boundary_frames, joint_speeds
+
+
+def process_bvh_data(data_dir, motion_ids, cutoff_freq=6.0):
+    """
+    Apply Butterworth filter and segmentation to BVH motion data
 
     Args:
         bvh_data: list of BVH mocap objects
         motion_ids: list of motion IDs corresponding to each BVH sequence
+        cutoff_freq: cutoff frequency for filtering (default 6.0 Hz)
 
     Returns:
-        processed_segments: list of segmented motion data in [signals, time] format
+        processed_segments: list of segmented motion data
         segment_motion_ids: list of motion IDs corresponding to each segment
     """
     processed_segments = []
     segment_motion_ids = []
+    bvh_files = [f for f in os.listdir(data_dir) if f.lower().endswith('.bvh')]
+    # for file in bvh_files:
+    #     file_dir = os.path.join(data_dir, file)
+    #     joints, motion_data, frame_time, frames = parse_bvh_robust(file_dir)
+    for file, motion_id in zip(bvh_files, motion_ids):
+        file_dir = os.path.join(data_dir, file)
+        print(f"Processing {file_dir} with motion ID {motion_id}")
+        joints, motion_data, frame_time, frames = parse_bvh_robust(file_dir)
 
-    for mocap, motion_id in zip(bvh_data, motion_ids):
-        # Convert frames to numpy array
-        frames = np.array(mocap.frames, dtype=np.float64)
+        # Apply Butterworth filter
+        smoothed_motion_data = filter_motion_data(motion_data, cutoff_freq=cutoff_freq,sampling_rate =30)
 
-        # Get frame time
-        try:
-            frame_time = mocap.frame_time
-        except:
-            frame_time = 0.03333  # Default 30 FPS
+        # Apply temporal segmentation
+        segments, boundaries, speeds = segment_motion_trajectories(
+            smoothed_motion_data,
+            joints,
+            frame_time
+        )
 
-        # Apply Butterworth filter (as specified in paper)
-        filtered_frames = filter_motion_data(frames,cutoff_freq=cutoff_freq)
+        # print(f"   ✅ Found {len(segments)} motion segments")
+        # for segment in segments:
+        #     processed_segments.append(segment.T)  # Transpose to [signals, time]
+        #     segment_motion_ids.append(motion_id)
+            # print("\n******  with segmentation")
+            # print("segment first: ", segment[:,10])
 
-        # Apply temporal segmentation based on limb endpoint movement
-        segments, boundaries = segment_motion_sequence(filtered_frames, frame_time)
+        # pass without segmentation --> 1540 segments
+        processed_segments.append(smoothed_motion_data.T) # the format of each segment should be [signals,time]
+        # print("\n#### without segmentation")
+        # print("segment first: ", smoothed_motion_data[:, 10])
 
-        # Add each segment to processed segments in [signals, time] format
-        for segment in segments:
-            if segment.shape[0] > 10:  # Only keep segments with sufficient length
-                processed_segments.append(segment.T)  # Transpose to [signals, time]
-                segment_motion_ids.append(motion_id)
+
 
     if not processed_segments:
         raise ValueError("No segments could be processed")
 
     return processed_segments, segment_motion_ids
-
-def segment_motion_sequence(data, frame_time=0.03333, min_segment_length=160e-3):
-    """
-    Segment motion based on Leh et al. (2023) approach:
-    - Use minima of summed speed of limb endpoints (wrists and ankles)
-    - Minimum distance of 160ms between boundaries
-
-    Args:
-        data: filtered motion data [frames, channels]
-        frame_time: time between frames in seconds
-        min_segment_length: minimum time between boundaries in seconds
-
-    Returns:
-        segments: list of data segments
-        boundaries: frame indices of segment boundaries
-    """
-    joint_mapping = get_joint_channel_mapping()
-
-    # Define limb endpoints for segmentation (following Leh et al.)
-    limb_endpoints = ['LeftWrist', 'RightWrist', 'LeftAnkle', 'RightAnkle']
-
-    # Compute combined speed of limb endpoints
-    total_speed = np.zeros(data.shape[0])
-
-    for joint_name in limb_endpoints:
-        if joint_name in joint_mapping:
-            joint_indices = joint_mapping[joint_name]['rot']
-            joint_speed = compute_movement_speed(data, joint_indices)
-            total_speed += joint_speed
-
-    # Smooth the speed signal slightly to reduce noise in boundary detection
-    if len(total_speed) > 5:
-        total_speed = signal.medfilt(total_speed, kernel_size=3)
-
-    # Find minima in the combined speed
-    # Invert signal to find minima as peaks
-    inverted_speed = -total_speed
-
-    # Convert minimum segment length to frames
-    min_frames = int(min_segment_length / frame_time)
-
-    # Find peaks (which are minima in original signal)
-    if len(inverted_speed) > min_frames:
-        peaks, _ = find_peaks(inverted_speed, distance=min_frames, height=None)
-    else:
-        peaks = []
-
-    # Always include start and end boundaries
-    boundaries = [0]
-    boundaries.extend(peaks)
-    boundaries.append(data.shape[0] - 1)
-
-    # Remove duplicates and sort
-    boundaries = sorted(list(set(boundaries)))
-
-    # Ensure minimum distance between boundaries
-    filtered_boundaries = [boundaries[0]]
-    for i in range(1, len(boundaries)):
-        if boundaries[i] - filtered_boundaries[-1] >= min_frames:
-            filtered_boundaries.append(boundaries[i])
-
-    # Always include the last boundary if not already there
-    if filtered_boundaries[-1] != boundaries[-1]:
-        filtered_boundaries.append(boundaries[-1])
-
-    # Create segments
-    segments = []
-    for i in range(len(filtered_boundaries) - 1):
-        start_idx = filtered_boundaries[i]
-        end_idx = filtered_boundaries[i + 1]
-        segment = data[start_idx:end_idx, :]
-        if segment.shape[0] > 0:  # Only add non-empty segments
-            segments.append(segment)
-
-    return segments, filtered_boundaries
-
-
 
 def save_mapping():
     """Save the current motion mapping to file"""
@@ -659,132 +800,6 @@ def merge_subject_csv_files(destination_folder, merged_folder, subjects, common_
                 print(f"Created merged file for subject {subject_id} with {len(sorted_dfs)} motions")
             else:
                 print(f"No common motions found for subject {subject_id}")
-
-#
-# def segmentation(motion_id,subject_id):
-#
-#     motion_id = motion_id
-#     padded_motion_id = str(motion_id).zfill(2)
-#
-#     subject_id = subject_id
-#     csv_file = f"../../data/MMpose/df_files_3d/subject_{subject_id}_motion_{padded_motion_id}.csv"
-#
-#     with open('../../data/common_motion_mapping.json', 'r') as f:
-#         motion_mapping = json.load(f)['mapping']
-#         id_to_motion = {str(v): k for k, v in motion_mapping.items()}
-#
-#     motion_name = id_to_motion.get(str(motion_id), f"motion_{motion_id}") if id_to_motion else f"motion_{motion_id}"
-#
-#     destination_folder = f"../../data/MMpose/segmented_files/{motion_name}"
-#
-#     os.makedirs(destination_folder, exist_ok=True)
-#
-#     df_3d = pd.read_csv(csv_file)
-#     frames = df_3d['frame_id'].unique()
-#     fps = 120  # Given in description
-#
-#     # Step 1: Extract wrist and foot markers positions per frame
-#     # We need to reshape the data to get positions for each joint at each frame
-#
-#     # Get positions for relevant joints (LWrist, RWrist, LAnkle, RAnkle)
-#     joint_positions = {}
-#     for frame in frames:
-#         frame_data = df_3d[df_3d['frame_id'] == frame]
-#
-#         # Initialize positions for this frame
-#         joint_positions[frame] = {}
-#
-#         # Extract positions for each joint we need
-#         for joint in ['LWrist', 'RWrist', 'LAnkle', 'RAnkle']:
-#             joint_data = frame_data[frame_data['joint_name'] == joint]
-#             if len(joint_data) > 0:
-#                 # Get x, y, z coordinates
-#                 joint_positions[frame][joint] = np.array([
-#                     joint_data['x_3d'].values[0],
-#                     joint_data['y_3d'].values[0],
-#                     joint_data['z_3d'].values[0]
-#                 ])
-#             else:
-#                 # Use zeros if joint data is missing
-#                 joint_positions[frame][joint] = np.zeros(3)
-#
-#     # Convert to numpy arrays for easier processing
-#     sorted_frames = sorted(frames)
-#     lwrist_pos = np.array([joint_positions[frame]['LWrist'] for frame in sorted_frames])
-#     rwrist_pos = np.array([joint_positions[frame]['RWrist'] for frame in sorted_frames])
-#     lankle_pos = np.array([joint_positions[frame]['LAnkle'] for frame in sorted_frames])
-#     rankle_pos = np.array([joint_positions[frame]['RAnkle'] for frame in sorted_frames])
-#
-#     # Step 2: Calculate velocities (difference between consecutive frames)
-#     def calculate_velocity(positions):
-#         # Calculate difference between consecutive positions
-#         velocities = np.diff(positions, axis=0)
-#         # Pad with a zero at the beginning to maintain array length
-#         velocities = np.vstack([np.zeros((1, 3)), velocities])
-#         return velocities
-#
-#     lwrist_vel = calculate_velocity(lwrist_pos)
-#     rwrist_vel = calculate_velocity(rwrist_pos)
-#     lankle_vel = calculate_velocity(lankle_pos)
-#     rankle_vel = calculate_velocity(rankle_pos)
-#
-#     # Step 3: Calculate speeds (magnitude of velocity)
-#     def calculate_speed(velocity):
-#         return np.sqrt(np.sum(velocity**2, axis=1))
-#
-#     lwrist_speed = calculate_speed(lwrist_vel)
-#     rwrist_speed = calculate_speed(rwrist_vel)
-#     lankle_speed = calculate_speed(lankle_vel)
-#     rankle_speed = calculate_speed(rankle_vel)
-#
-#     # Step 4: Sum the speeds of all markers
-#     summed_speed = lwrist_speed + rwrist_speed + lankle_speed + rankle_speed
-#
-#     # Step 5: Find local minima in the summed speed
-#     # Minimum distance between boundaries: 160ms = 0.16s * 120fps = 19.2 frames ≈ 19 frames
-#     min_distance = int(0.16 * fps)  # 160ms converted to frames at 120fps
-#
-#     # Find local minima (as peaks in negative speed)
-#     negative_speed = -summed_speed
-#     minima_indices, _ = find_peaks(negative_speed, distance=min_distance)
-#
-#     # Add the first and last frame as boundaries
-#     segment_boundaries = np.concatenate([[0], minima_indices, [len(summed_speed)-1]])
-#
-#     # Step 6: Visualize the segmentation
-#     plt.figure(figsize=(15, 6))
-#     plt.plot(summed_speed, label='Summed Speed')
-#     plt.plot(minima_indices, summed_speed[minima_indices], 'ro', label='Detected Minima')
-#     plt.vlines(segment_boundaries, ymin=0, ymax=max(summed_speed), colors='g', linestyles='dashed', label='Segment Boundaries')
-#     plt.legend()
-#     plt.title(f'Movement Segmentation for {motion_name}')
-#     plt.xlabel('Frame')
-#     plt.ylabel('Summed Speed')
-#     plt.savefig(os.path.join(destination_folder, f'subject_{subject_id}_segmentation.png'))
-#     plt.close()
-#
-#     # Step 7: Create segments based on boundaries
-#     segments = []
-#     for i in range(len(segment_boundaries)-1):
-#         start_idx = int(segment_boundaries[i])
-#         end_idx = int(segment_boundaries[i+1])
-#
-#         # Get the actual frame IDs for this segment
-#         start_frame = sorted_frames[start_idx]
-#         end_frame = sorted_frames[end_idx]
-#
-#         # Extract the segment data for all joints
-#         segment_data = df_3d[(df_3d['frame_id'] >= start_frame) & (df_3d['frame_id'] <= end_frame)].copy()
-#         segments.append(segment_data)
-#
-#         # Optionally save each segment to a separate CSV
-#         csv_pattern = f"sub_{subject_id}_motion_{motion_id}_seg_{i+1}.csv"
-#         segment_data.to_csv(os.path.join(destination_folder, csv_pattern), index=False)
-#
-#
-#     # print(f"Segmentation complete. Found {len(segments)} segments.")
-#     print(f"Segment frames: {[(segments[i]['frame_id'].min(), segments[i]['frame_id'].max()) for i in range(len(segments))]}")
-
 
 
 def load_model_with_full_state(filename, num_segments=None, num_signals=None):

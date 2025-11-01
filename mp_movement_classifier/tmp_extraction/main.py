@@ -43,7 +43,7 @@ def prepare_save_paths(num_mps: int, cutoff_freq: float, num_t_points: int, mode
     Prepare save paths for model and figures.
     """
     # Organize outputs under a dedicated directory
-    model_dir = os.path.join(config.SAVING_DIR, f"test_seg_mp_model_{num_mps}_cutoff_{cutoff_freq}_tpoints_{num_t_points}")
+    model_dir = os.path.join(config.SAVING_DIR, f"mp_model_{num_mps}_cutoff_{cutoff_freq}_tpoints_{num_t_points}")
     os.makedirs(model_dir, exist_ok=True)
 
     model_name = f"mp_model_{num_mps}_PC_init_cutoff_{cutoff_freq}_tpoints_{num_t_points}"
