@@ -359,7 +359,7 @@ def segment_motion_trajectories(motion_data, joints, frame_time,
         print(f"   Segment {i}: Frames {boundary[0]}-{boundary[1]} ")
         print(f"   Time: {time_vector[boundary[0]]} s - {time_vector[boundary[1]]} s")
 
-    return segments, boundary_frames, joint_speeds
+    return segments, boundaries,boundary_frames, joint_speeds
 
 
 def process_bvh_data(data_dir, motion_ids, cutoff_freq=6.0):
@@ -378,9 +378,7 @@ def process_bvh_data(data_dir, motion_ids, cutoff_freq=6.0):
     processed_segments = []
     segment_motion_ids = []
     bvh_files = [f for f in os.listdir(data_dir) if f.lower().endswith('.bvh')]
-    # for file in bvh_files:
-    #     file_dir = os.path.join(data_dir, file)
-    #     joints, motion_data, frame_time, frames = parse_bvh_robust(file_dir)
+
     for file, motion_id in zip(bvh_files, motion_ids):
         file_dir = os.path.join(data_dir, file)
         print(f"Processing {file_dir} with motion ID {motion_id}")
@@ -390,21 +388,24 @@ def process_bvh_data(data_dir, motion_ids, cutoff_freq=6.0):
         smoothed_motion_data = filter_motion_data(motion_data, cutoff_freq=cutoff_freq,sampling_rate =30)
 
         # Apply temporal segmentation
-        segments, boundaries, speeds = segment_motion_trajectories(
+        segments, boundaries,boundary_frames, speeds = segment_motion_trajectories(
             smoothed_motion_data,
             joints,
             frame_time
         )
 
         # print(f"   ✅ Found {len(segments)} motion segments")
-        # for segment in segments:
-        #     processed_segments.append(segment.T)  # Transpose to [signals, time]
-        #     segment_motion_ids.append(motion_id)
+        min_segment_length = 10
+        for segment in segments:
+            if segment.shape[0] >= min_segment_length:
+
+                processed_segments.append(segment.T)  # Transpose to [signals, time]
+                segment_motion_ids.append(motion_id)
             # print("\n******  with segmentation")
             # print("segment first: ", segment[:,10])
 
         # pass without segmentation --> 1540 segments
-        processed_segments.append(smoothed_motion_data.T) # the format of each segment should be [signals,time]
+        # processed_segments.append(smoothed_motion_data.T) # the format of each segment should be [signals,time]
         # print("\n#### without segmentation")
         # print("segment first: ", smoothed_motion_data[:, 10])
 

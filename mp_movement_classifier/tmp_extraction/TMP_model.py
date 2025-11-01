@@ -522,8 +522,8 @@ class MP_model(torch.nn.Module):
             if gradlen0 is None:
                 gradlen0=gradlen
 
-            # if (step<adam_steps and step % 100 == 0) or (step>adam_steps):
-            print("Learning step",step,"at P=",float(self.learn_curve[-1]),", VAF=",self.VAF_curve[-1],", rel. gradient length=",float(gradlen/gradlen0))
+            if (step<adam_steps and step % 100 == 0) or (step>adam_steps):
+                print("Learning step",step,"at P=",float(self.learn_curve[-1]),", VAF=",self.VAF_curve[-1],", rel. gradient length=",float(gradlen/gradlen0))
             if gradlen/gradlen0<5e-4:
                 break
 

@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation, PillowWriter
+from matplotlib.animation import FuncAnimation, PillowWriter, FFMpegWriter
+
 import os
 from mpl_toolkits.mplot3d import Axes3D
 import warnings
@@ -160,7 +161,8 @@ def compute_forward_kinematics(joints, motion_data, frame_idx):
 
 def create_segment_animation(bvh_filename, segment_idx, segment_frames,
                              joints, motion_data, frame_time,
-                             output_dir="../../results/segment_animations"):
+                             output_dir="../../results/segment_animations",
+                             format = 'mp4'):
     """
     Create and save animation for a specific motion segment.
 
@@ -277,15 +279,27 @@ def create_segment_animation(bvh_filename, segment_idx, segment_frames,
     # Create animation
     anim = FuncAnimation(fig, update, frames=num_frames,
                          init_func=init, blit=False,
-                         interval=frame_time * 1000,  # Convert to milliseconds
+                         interval=1000/30,  # Convert to milliseconds
                          repeat=True)
 
     # Save animation
-    output_path = os.path.join(output_dir,
-                               f"{bvh_filename}_segment_{segment_idx:02d}.gif")
+    # output_path = os.path.join(output_dir,
+    #                            f"{bvh_filename}_segment_{segment_idx:02d}.gif")
+    #
+    # print(f"   💾 Saving animation to: {output_path}")
+    # writer = PillowWriter(fps=30)
+    # anim.save(output_path, writer=writer)
+    # Choose output format and writer
+    if format.lower() == 'mp4':
+        output_path = os.path.join(output_dir,
+                                   f"{bvh_filename}_segment_{segment_idx:02d}.mp4")
+        writer = FFMpegWriter(fps=30, bitrate=1800)
+    else:  # GIF format
+        output_path = os.path.join(output_dir,
+                                   f"{bvh_filename}_segment_{segment_idx:02d}.gif")
+        writer = PillowWriter(fps=30)
 
-    print(f"   💾 Saving animation to: {output_path}")
-    writer = PillowWriter(fps=int(1 / frame_time))
+    print(f"   💾 Saving {format.upper()} animation to: {output_path}")
     anim.save(output_path, writer=writer)
 
     plt.close(fig)
@@ -294,13 +308,13 @@ def create_segment_animation(bvh_filename, segment_idx, segment_frames,
     return output_path
 
 
-def create_all_segment_animations(bvh_filename, segments, joints, motion_data, frame_time):
+def create_all_segment_animations(bvh_filename, boundaries, joints, motion_data, frame_time):
     """
     Create animations for all segments and save summary information.
 
     Args:
         bvh_filename: Name of the BVH file
-        segments: List of [start_frame, end_frame] pairs
+        boundaries: List of [start_frame, end_frame] pairs
         joints: Joint information from BVH parser
         motion_data: Motion data array
         frame_time: Time between frames
@@ -314,10 +328,10 @@ def create_all_segment_animations(bvh_filename, segments, joints, motion_data, f
 
     # Create animations for each segment
     animation_paths = []
-    for i, segment in enumerate(segments, 1):
+    for i, boundary in enumerate(boundaries, 1):
         try:
             path = create_segment_animation(
-                bvh_filename, i, segment,
+                bvh_filename, i, boundary,
                 joints, motion_data, frame_time,
                 output_dir
             )
@@ -327,17 +341,19 @@ def create_all_segment_animations(bvh_filename, segments, joints, motion_data, f
             continue
 
     # Create summary file
+
     summary_path = os.path.join(output_dir, "segment_summary.txt")
     with open(summary_path, 'w') as f:
         f.write(f"Motion Segmentation Summary\n")
         f.write(f"{'=' * 80}\n")
         f.write(f"File: {bvh_filename}.bvh\n")
-        f.write(f"Total Segments: {len(segments)}\n")
+        f.write(f"Total Segments: {len(boundaries)}\n")
         f.write(f"Frame Time: {frame_time:.4f} seconds\n\n")
 
-        for i, segment in enumerate(segments, 1):
-            start, end = segment
-            duration = (end - start + 1) * frame_time
+        for i, boundary in enumerate(boundaries, 1):
+
+            start, end = boundary[0], boundary[1]
+            duration = (end - start ) * frame_time
             f.write(f"Segment {i:2d}: Frames {start:4d}-{end:4d} | "
                     f"Duration: {duration:6.2f}s | "
                     f"Frames: {end - start + 1:4d}\n")
@@ -350,7 +366,7 @@ def create_all_segment_animations(bvh_filename, segments, joints, motion_data, f
     return animation_paths
 
 
-def visualize_segment_comparison(bvh_filename, segments, joint_speeds, frame_time,
+def visualize_segment_comparison(bvh_filename, boundaries, joint_speeds, frame_time,
                                  output_dir="../../results/segment_animations"):
     """
     Create a visualization showing all segments with speed profile.
@@ -362,12 +378,12 @@ def visualize_segment_comparison(bvh_filename, segments, joint_speeds, frame_tim
     # Plot speed profile
     ax.plot(time_vector, joint_speeds, 'b-', linewidth=1.5, label='Joint Speed')
 
-    # Highlight segments with different colors
-    colors = plt.cm.viridis(np.linspace(0, 1, len(segments)))
+    # Highlight boundaries with different colors
+    colors = plt.cm.viridis(np.linspace(0, 1, len(boundaries)))
 
-    for i, segment in enumerate(segments):
-        start_time = time_vector[segment[0]]
-        end_time = time_vector[segment[1]]
+    for i, boundary in enumerate(boundaries):
+        start_time = time_vector[boundary[0]]
+        end_time = time_vector[boundary[1]]
         ax.axvspan(start_time, end_time, color=colors[i], alpha=0.3,
                    label=f'Segment {i + 1}')
 
@@ -377,14 +393,14 @@ def visualize_segment_comparison(bvh_filename, segments, joint_speeds, frame_tim
                 ha='center', va='top', fontsize=12, fontweight='bold')
 
     # Mark boundaries
-    for boundary in [seg[0] for seg in segments[1:]]:
+    for boundary in [seg[0] for seg in boundaries[1:]]:
         ax.axvline(x=time_vector[boundary], color='r', linestyle='--',
                    linewidth=2, alpha=0.7)
 
     ax.set_xlabel('Time (seconds)', fontsize=12)
     ax.set_ylabel('Joint Speed (deg/s)', fontsize=12)
     ax.set_title(f'Motion Segmentation Overview: {bvh_filename}\n'
-                 f'{len(segments)} segments detected',
+                 f'{len(boundaries)} segments detected',
                  fontsize=14, fontweight='bold')
     ax.legend(loc='upper right', fontsize=8, ncol=2)
     ax.grid(True, alpha=0.3)

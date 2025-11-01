@@ -176,7 +176,6 @@ def compute_joint_speed(motion_data, joints, frame_time, wrist_joints=['LeftWris
 
     return joint_speeds
 
-
 def segment_motion_trajectories(bvh_filename, motion_data, joints, frame_time,
                                 target_joints=None,
                                 wrist_joints=['LeftWrist', 'RightWrist'],
@@ -195,19 +194,19 @@ def segment_motion_trajectories(bvh_filename, motion_data, joints, frame_time,
     # Compute joint speeds
     joint_speeds = compute_joint_speed(motion_data, joints, frame_time,
                                        wrist_joints, ankle_joints)
-
-    # Minimum distance in frames
+    joint_speeds = compute_joint_speed(motion_data, joints, frame_time,
+                                       wrist_joints, ankle_joints)
     min_frames = int(min_boundary_distance / frame_time)
-
-    # Find speed minima as potential segment boundaries
-    peaks, _ = find_peaks(-joint_speeds, distance=min_frames, prominence=0.5)
-
-    # Add start and end frames
+    min_frames = 30  # i manually change it to 6 instead of 4
+    print(f"Minimum distance in frames: {min_frames}")
+    peaks, _ = find_peaks(-joint_speeds, distance=min_frames)
     boundary_frames = [0] + list(peaks) + [len(joint_speeds) - 1]
+    # print(f"boundary_frames: {boundary_frames}")
     boundary_frames.sort()
 
     # Create segments
-    segments = [boundary_frames[i:i + 2] for i in range(len(boundary_frames) - 1)]
+    boundaries = [boundary_frames[i:i + 2] for i in range(len(boundary_frames) - 1)]
+    segments = [motion_data[boundary_frames[i]:boundary_frames[i + 1], :] for i in range(len(boundary_frames) - 1)]
 
     # Create time vector
     time_vector = np.arange(len(joint_speeds)) * frame_time
@@ -253,8 +252,9 @@ def segment_motion_trajectories(bvh_filename, motion_data, joints, frame_time,
         # Highlight segments with different colors
         segment_colors = plt.cm.viridis(np.linspace(0, 1, len(segments)))
         for j, segment in enumerate(segments):
-            start_time = time_vector[segment[0]]
-            end_time = time_vector[segment[1]]
+            boundary = boundaries[j]
+            start_time = time_vector[boundary[0]]
+            end_time = time_vector[boundary[1]]
             ax.axvspan(start_time, end_time, color=segment_colors[j], alpha=0.2,
                        label=f'Segment {j + 1}')
 
@@ -274,12 +274,17 @@ def segment_motion_trajectories(bvh_filename, motion_data, joints, frame_time,
     plt.close()
 
     # Print segment information
+    # print(f"Duration of complete video : {len(joint_speeds) * frame_time} seconds")
+    # print(f"Number of segments: {len(segments)}")
     print("\n📊 Motion Segments:")
     for i, segment in enumerate(segments, 1):
-        print(f"   Segment {i}: Frames {segment[0]}-{segment[1]} "
-              f"(Time: {time_vector[segment[0]]:.2f}s - {time_vector[segment[1]]:.2f}s)")
+        boundary = boundaries[i - 1]
+        print("segment shape", segment.shape)
+        print("boundary", boundary)
+        print(f"   Segment {i}: Frames {boundary[0]}-{boundary[1]} ")
+        print(f"   Time: {time_vector[boundary[0]]} s - {time_vector[boundary[1]]} s")
 
-    return segments, boundary_frames, joint_speeds
+    return segments, boundaries,boundary_frames, joint_speeds
 
 
 def extract_joint_angles_robust(joints, motion_data, joint_name):
@@ -310,7 +315,7 @@ def extract_joint_angles_robust(joints, motion_data, joint_name):
 def main():
 
     # Configuration
-    bvh_filename = "subject_12_motion_07"
+    bvh_filename = "subject_12_motion_05"
     bvh_file = f"../../data/bvh_files/{bvh_filename}.bvh"
 
     joints, motion_data, frame_time, frames = parse_bvh_robust(bvh_file)
@@ -322,11 +327,11 @@ def main():
     smoothed_motion_data = apply_butterworth_smoothing(
         motion_data,
         cutoff_freq=6.0,  # 6 Hz cutoff as recommended by research
-        filter_order=6,  # 6th order filter
+        filter_order=4,  # 6th order filter
         sampling_freq=1 / frame_time
     )
 
-    segments, boundaries, speeds = segment_motion_trajectories(
+    segments, boundaries, boundary_frames,speeds = segment_motion_trajectories(
         bvh_filename,
         smoothed_motion_data,
         joints,
@@ -337,7 +342,7 @@ def main():
 
     animation_paths = create_all_segment_animations(
         bvh_filename,
-        segments,
+        boundaries,
         joints,
         smoothed_motion_data,
         frame_time
@@ -345,7 +350,7 @@ def main():
 
     overview_path = visualize_segment_comparison(
         bvh_filename,
-        segments,
+        boundaries,
         speeds,
         frame_time
     )

@@ -473,7 +473,7 @@ def main():
     cutoff_freq = 6.0
     tpoints = 30
     model_name = f"mp_model_{num_MPs}_cutoff_{cutoff_freq}"
-    model_dir = os.path.join(config.SAVING_DIR, f"new_seg_mp_model_{num_MPs}_cutoff_{cutoff_freq}_tpoints_{tpoints}")
+    model_dir = os.path.join(config.SAVING_DIR, f"mp_model_{num_MPs}_cutoff_{cutoff_freq}_tpoints_{tpoints}")
     model_file = os.path.join(model_dir, f"mp_model_{num_MPs}_PC_init_cutoff_{cutoff_freq}_tpoints_{tpoints}")
     out_dir = os.path.join(model_dir, "classification_PCA_20Componants")
     model_path = model_file
@@ -482,8 +482,11 @@ def main():
     bvh_data, motion_ids = read_bvh_files(folder_path)
 
     # Process data according to paper specifications
-    processed_data, segment_motion_ids = process_bvh_data(bvh_data, motion_ids)
-
+    processed_data, segment_motion_ids = process_bvh_data(
+        data_dir = folder_path,
+        motion_ids = motion_ids,
+        cutoff_freq= cutoff_freq,
+    )
     # based on TMP code: the format of data=list(segment_data[signals,time])
     num_segments = len(processed_data)
     num_signals = processed_data[0].shape[0]
