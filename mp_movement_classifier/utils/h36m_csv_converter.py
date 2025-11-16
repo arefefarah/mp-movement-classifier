@@ -2,7 +2,8 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import json
-from bvh_skeleton import h36m_skeleton
+# from bvh_skeleton import h36m_skeleton
+from bvh_converter import h36m_skeleton
 
 
 class H36MConverter:
@@ -26,7 +27,7 @@ class H36MConverter:
             'Spine': 'Spine',
             'Thorax': 'Spine1',
             'Neck': 'Neck',
-            'Head': 'Head',
+            'Head': 'HeadEndSite',
             'LShoulder': 'LeftShoulder',
             'LElbow': 'LeftArm',
             'LWrist': 'LeftHand',
@@ -64,8 +65,9 @@ class H36MConverter:
         return poses
 
     def convert_to_bvh(self, csv_path, output_path):
-        """Convert CSV file to BVH format"""
+        """Convert 3d position CSV file to rotation angles BVH format"""
         # Convert CSV to numpy array
+        print("🔄 Converting CSV to numpy array...")
         poses_3d = self.convert_csv_to_numpy(csv_path)
 
         # Initialize H36M skeleton
@@ -75,4 +77,29 @@ class H36MConverter:
         channels, header = h36m_skel.poses2bvh(poses_3d, output_file=output_path)
 
         return channels, header
+
+    def convert_to_csv(self, csv_path, output_path):
+        """Convert 3d postion CSV file to exp map rep csv file"""
+        # Convert input CSV to numpy array
+        poses_3d = self.convert_csv_to_numpy(csv_path)
+
+        # Initialize H36M skeleton
+        h36m_skel = h36m_skeleton.H36mSkeleton()
+
+        # Convert to BVH
+        channels= h36m_skel.poses2expmap_csv(poses_3d, output_file=output_path)
+
+        columns = []
+        for joint_idx, joint_name in enumerate(self.joint_names):
+            columns.append(joint_name+"_alpha")
+            columns.append(joint_name + "_beta")
+            columns.append(joint_name + "_gamma")
+
+
+        # Create the DataFrame
+        df = pd.DataFrame(channels, columns=columns)
+        df.to_csv(output_path, index=False) # index=False prevents writing the DataFrame index as a column
+        print(f"file saved to {output_path}")
+
+        return df
 

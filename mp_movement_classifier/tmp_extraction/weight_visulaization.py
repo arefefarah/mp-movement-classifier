@@ -14,6 +14,7 @@ Author: Adapted for BVH-based TMP model analysis
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import os
 import torch
 from pathlib import Path
 from scipy import stats
@@ -21,119 +22,57 @@ import json
 import argparse
 import sys
 
-# Joint names (17 joints from H36M skeleton)
+from mp_movement_classifier.utils.utils import read_bvh_files, process_bvh_data
+
 JOINT_NAMES = [
     'Hip', 'RHip', 'RKnee', 'RAnkle', 'LHip', 'LKnee', 'LAnkle',
     'Spine', 'Thorax', 'Neck', 'Head',
     'LShoulder', 'LElbow', 'LWrist', 'RShoulder', 'RElbow', 'RWrist'
 ]
 
-COORD_NAMES = ['X', 'Y', 'Z']
+CHANNEL_NAMES = []
+# Hip has 6 channels (position + rotation)
+CHANNEL_NAMES.extend([f'{JOINT_NAMES[0]}_Xpos', f'{JOINT_NAMES[0]}_Ypos', f'{JOINT_NAMES[0]}_Zpos',
+                      f'{JOINT_NAMES[0]}_Zrot', f'{JOINT_NAMES[0]}_Xrot', f'{JOINT_NAMES[0]}_Yrot'])
+# All other joints have 3 channels (Zrotation, Xrotation, Yrotation)
+for joint in JOINT_NAMES[1:]:
+    CHANNEL_NAMES.extend([f'{joint}_Zrot', f'{joint}_Xrot', f'{joint}_Yrot'])
+CHANNEL_NAMES = CHANNEL_NAMES[3:]
+print(len(CHANNEL_NAMES))
 
-# Default paths - EDIT THESE TO MATCH YOUR SETUP
+COORD_NAMES = ['X', 'Y', 'Z']
 DEFAULT_MODEL_DIR = "../../results/tmp_configs"
-DEFAULT_DATA_DIR = "../../data/bvh_files"
+DEFAULT_DATA_DIR = "../../data/filtered_bvh_files"
 DEFAULT_MOTION_MAPPING = "../../data/motion_mapping.json"
 
 
 def load_motion_mapping(mapping_file):
-    """
-    Load motion ID to motion name mapping from JSON file.
 
-    Returns:
-        motion_id_to_name: dict mapping motion IDs to names
-    """
-    if not Path(mapping_file).exists():
-        print(f"⚠️  Warning: Motion mapping file not found: {mapping_file}")
-        return None
-
-    try:
-        with open(mapping_file, 'r') as f:
-            data = json.load(f)
-            # Invert the mapping: from {name: id} to {id: name}
-            if "mapping" in data:
-                motion_mapping = data["mapping"]
-                motion_id_to_name = {v: k for k, v in motion_mapping.items()}
-            else:
-                motion_id_to_name = {v: k for k, v in data.items()}
-
-        print(f"✓ Loaded motion mapping with {len(motion_id_to_name)} motion types:")
-        for motion_id, name in sorted(motion_id_to_name.items()):
-            print(f"    ID {motion_id}: {name}")
-
-        return motion_id_to_name
-    except Exception as e:
-        print(f"❌ Error loading motion mapping: {e}")
-        return None
-
-
-def load_model_weights_and_metadata(model_path):
-    """
-    Load weights from trained TMP model along with metadata.
-
-    Returns:
-        weights_reshaped: [num_segments, num_joints, num_coords, num_MPs]
-        saved_data: full model data
-    """
-    saved_data = torch.load(model_path, map_location='cpu', weights_only=False)
-
-    # Extract weights from state dict
-    weights_list = []
-    idx = 0
-    while f"weights.{idx}" in saved_data["model_state_dict"]:
-        weights_list.append(saved_data["model_state_dict"][f"weights.{idx}"].numpy())
-        idx += 1
-
-    # Stack into [num_segments, num_signals, num_MPs]
-    weights = np.stack(weights_list, axis=0)
-
-    num_segments, num_signals, num_MPs = weights.shape
-    print(f"\n{'=' * 60}")
-    print(f"MODEL INFORMATION")
-    print(f"{'=' * 60}")
-    print(f"Number of segments: {num_segments}")
-    print(f"Number of signals:  {num_signals}")
-    print(f"Number of MPs:      {num_MPs}")
-    print(f"Number of joints:   {num_signals // 3}")
-
-    # Reshape to [num_segments, num_joints, num_coords, num_MPs]
-    num_joints = num_signals // 3
-    weights_reshaped = weights.reshape(num_segments, num_joints, 3, num_MPs)
-
-    return weights_reshaped, saved_data
-
+    with open(mapping_file, 'r') as f:
+        data = json.load(f)
+        # Invert the mapping: from {name: id} to {id: name}
+        if "mapping" in data:
+            motion_mapping = data["mapping"]
+            motion_id_to_name = {v: k for k, v in motion_mapping.items()}
+        else:
+            motion_id_to_name = {v: k for k, v in data.items()}
+    print(f"✓ Loaded motion mapping with {len(motion_id_to_name)} motion types.")
+    # for motion_id, name in sorted(motion_id_to_name.items()):
+    #     print(f"    ID {motion_id}: {name}")
+    return motion_id_to_name
 
 def load_segment_motion_ids(bvh_dir, cutoff_freq=6.0):
-    """
-    Process BVH files to get segment-to-motion mapping.
-    This replicates the process_bvh_data workflow.
 
-    Returns:
-        segment_motion_ids: array of motion IDs for each segment
-    """
-    try:
-        # Import required functions from your utils
-        sys.path.insert(0, str(Path(__file__).parent.parent))
-        from mp_movement_classifier.utils.utils import read_bvh_files, process_bvh_data
 
-        print(f"\n{'=' * 60}")
-        print(f"PROCESSING BVH DATA")
-        print(f"{'=' * 60}")
-        print(f"Reading BVH files from: {bvh_dir}")
-
-        # Read BVH files
         bvh_data, motion_ids = read_bvh_files(bvh_dir)
-        print(f"Loaded {len(bvh_data)} BVH files")
 
-        # Process and segment
-        print(f"Processing with cutoff frequency: {cutoff_freq} Hz")
         processed_segments, segment_motion_ids = process_bvh_data(
-            bvh_data,
+            bvh_dir,
             motion_ids,
             cutoff_freq=cutoff_freq
         )
 
-        print(f"Created {len(segment_motion_ids)} segments")
+        print(f"loaded {len(segment_motion_ids)} segments")
 
         # Count segments per motion
         unique_motions, counts = np.unique(segment_motion_ids, return_counts=True)
@@ -143,47 +82,8 @@ def load_segment_motion_ids(bvh_dir, cutoff_freq=6.0):
 
         return np.array(segment_motion_ids)
 
-    except ImportError as e:
-        print(f"⚠️  Warning: Could not import processing functions: {e}")
-        print(f"    Make sure mp_movement_classifier is in your Python path")
-        return None
-    except Exception as e:
-        print(f"❌ Error processing BVH data: {e}")
-        return None
 
-
-def find_model_file(model_dir, num_mps=20, cutoff_freq=6.0, num_t_points=30):
-    """
-    Find model file based on naming convention from training script.
-
-    Returns path to model file or None if not found.
-    """
-    model_subdir = Path(model_dir) / f"new_seg_mp_model_{num_mps}_cutoff_{cutoff_freq}_tpoints_{num_t_points}"
-
-    if not model_subdir.exists():
-        print(f"⚠️  Model directory not found: {model_subdir}")
-        return None
-
-    model_name = f"mp_model_{num_mps}_PC_init_cutoff_{cutoff_freq}_tpoints_{num_t_points}"
-    model_path = model_subdir / model_name
-
-    if not model_path.exists():
-        print(f"⚠️  Model file not found: {model_path}")
-        # Try to find any .pth file in the directory
-        pth_files = list(model_subdir.glob("*.pth"))
-        if pth_files:
-            print(f"    Found alternative model file: {pth_files[0]}")
-            return str(pth_files[0])
-        return None
-
-    return str(model_path)
-
-
-# ============================================================================
-# ANALYSIS 1: Compare weights of MPs across movements for all joints
-# ============================================================================
-
-def compare_weights_across_movements(weights, motion_ids, motion_names_dict=None, save_dir='./plots'):
+def compare_weights_across_movements(weights, motion_ids, motion_names_dict=None,save_dir='./plots'):
     """
     Compare MP weights across different movements for all joints.
 
@@ -194,11 +94,10 @@ def compare_weights_across_movements(weights, motion_ids, motion_names_dict=None
     """
     Path(save_dir).mkdir(parents=True, exist_ok=True)
 
-    num_segments, num_joints, num_coords, num_MPs = weights.shape
+    num_segments, num_joints_coord, num_MPs = weights.shape
 
     unique_motions = np.unique(motion_ids)
 
-    # Get motion names
     if motion_names_dict:
         motion_labels = [motion_names_dict.get(m, f'Motion {m}') for m in unique_motions]
     else:
@@ -206,38 +105,32 @@ def compare_weights_across_movements(weights, motion_ids, motion_names_dict=None
 
     # Average weights across coordinates for each joint and MP
     # Shape: [num_segments, num_joints, num_MPs]
-    weights_per_joint = weights.mean(axis=2)
+    # weights_per_joint = weights.mean(axis=2)
 
     # For each MP, show comparison across joints and movements
     for mp_idx in range(min(num_MPs, 10)):  # Show first 10 MPs
         n_motions = len(unique_motions)
-        fig, axes = plt.subplots(1, n_motions,
-                                 figsize=(5 * n_motions, 6),
-                                 squeeze=False)
 
         for i, motion_id in enumerate(unique_motions):
             mask = motion_ids == motion_id
-            motion_weights = weights_per_joint[mask, :, mp_idx]  # [n_segments, num_joints]
+            motion_weights = weights[mask, :, mp_idx]  # [n_segments, num_joints_coord]
 
             # Average across segments of this motion
-            avg_weights = motion_weights.mean(axis=0)  # [num_joints]
+            avg_weights = motion_weights.mean(axis=0)  # [num_joints_coord]
             std_weights = motion_weights.std(axis=0)
 
-            ax = axes[0, i]
-            ax.bar(range(num_joints), avg_weights,
-                   yerr=std_weights, capsize=3,
+            plt.figure(figsize=(10, 6))
+            plt.bar(CHANNEL_NAMES, avg_weights,
+                   yerr=std_weights, width=0.5 ,  capsize=3,
                    color='steelblue', alpha=0.7)
-            ax.set_xticks(range(num_joints))
-            ax.set_xticklabels(JOINT_NAMES, rotation=45, ha='right', fontsize=8)
-            ax.set_ylabel('Average Weight', fontsize=10)
-            ax.set_title(f'{motion_labels[i]}\n({mask.sum()} segments)', fontsize=10)
-            ax.grid(axis='y', alpha=0.3)
-
-        plt.suptitle(f'MP {mp_idx + 1} Weights Across Joints and Movements',
-                     fontsize=14, y=1.02, weight='bold')
-        plt.tight_layout()
-        plt.savefig(f'{save_dir}/mp_{mp_idx + 1:02d}_comparison.png', dpi=150, bbox_inches='tight')
-        plt.close()
+            plt.ylabel(f'Average Weight ',fontsize=10)
+            plt.xticks(rotation=45, ha='right',fontsize=6)  # 'ha' for horizontal alignment
+            plt.xlabel('Channels')
+            plt.title(f'MP {mp_idx + 1}  Weights for {motion_labels[i]}\n({mask.sum()} segments)',
+                      fontsize=12, y=1.02)
+            plt.tight_layout()
+            plt.savefig(f'{save_dir}/mp_{mp_idx + 1:02d}_{motion_id}_weights.png', dpi=150, bbox_inches='tight')
+            plt.close()
 
     print(f"✓ Saved {min(num_MPs, 10)} MP comparison plots to {save_dir}")
 
@@ -384,7 +277,7 @@ def analyze_joint_coord_variance(weights, motion_ids, motion_names_dict=None, co
                    yerr=std_joint_variances,
                    color=colors, alpha=0.7, capsize=5)
     ax1.set_xticks(range(num_joints))
-    ax1.set_xticklabels(JOINT_NAMES, rotation=45, ha='right', fontsize=9)
+    ax1.set_xticklabels(CHANNEL_NAMES, rotation=45, ha='right', fontsize=9)
     ax1.set_ylabel('Average Z-coordinate Variance', fontsize=11, weight='bold')
     ax1.set_title('Average Z-Variance Among MPs\nfor Each Joint', fontsize=12, weight='bold')
     ax1.grid(axis='y', alpha=0.3)
@@ -472,108 +365,66 @@ def analyze_joint_coord_variance(weights, motion_ids, motion_names_dict=None, co
 def main():
     parser = argparse.ArgumentParser(
         description='Analyze TMP model weights across movements and joints',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Auto-detect model and process BVH data
-  python %(prog)s --auto
-
-  # Specify custom paths
-  python %(prog)s --model-dir /path/to/models --bvh-dir /path/to/bvh
-
-  # Use specific model file
-  python %(prog)s --model-path /path/to/model.pth --bvh-dir /path/to/bvh
-        """
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
-    parser.add_argument('--auto', action='store_true',
-                        help='Auto-detect model and BVH data using default paths')
-    parser.add_argument('--model-path', type=str,
-                        help='Path to trained model file (overrides --model-dir)')
     parser.add_argument('--model-dir', type=str, default=DEFAULT_MODEL_DIR,
                         help=f'Directory containing trained models (default: {DEFAULT_MODEL_DIR})')
     parser.add_argument('--bvh-dir', type=str, default=DEFAULT_DATA_DIR,
                         help=f'Directory containing BVH files (default: {DEFAULT_DATA_DIR})')
-    parser.add_argument('--motion-mapping', type=str, default=DEFAULT_MOTION_MAPPING,
-                        help=f'Path to motion mapping JSON (default: {DEFAULT_MOTION_MAPPING})')
     parser.add_argument('--output-dir', type=str, default='./weight_analysis',
                         help='Output directory for plots (default: ./weight_analysis)')
     parser.add_argument('--num-mps', type=int, default=20,
                         help='Number of MPs in model (default: 20)')
     parser.add_argument('--cutoff-freq', type=float, default=6.0,
                         help='Cutoff frequency used in training (default: 6.0)')
-    parser.add_argument('--num-t-points', type=int, default=30,
-                        help='Number of time points in model (default: 30)')
 
     args = parser.parse_args()
 
-    print(f"\n{'=' * 70}")
-    print("TMP MODEL WEIGHT ANALYSIS".center(70))
-    print(f"{'=' * 70}\n")
-
     # Load motion mapping
-    motion_id_to_name = load_motion_mapping(args.motion_mapping)
+    motion_id_to_name = load_motion_mapping(DEFAULT_MOTION_MAPPING)
 
-    # Find or use specified model file
-    if args.model_path:
-        model_path = args.model_path
-    else:
-        model_path = find_model_file(
-            args.model_dir,
-            args.num_mps,
-            args.cutoff_freq,
-            args.num_t_points
-        )
-        if model_path is None:
-            print(f"\n❌ Could not find model file. Please specify --model-path")
-            return
+    # model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"pos_filtered_mp_model_20_cutoff_3_tpoints_30")
+    model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"pos_filtered_mp_model_10_1second_seg")
+    # model_name = "mp_model_20_PC_init_cutoff_3_tpoints_30"
+    model_name = "mp_model_10_PC_tpoints_30"
 
-    print(f"\nUsing model: {model_path}")
+    model_path = os.path.join(model_subdir,model_name)
 
-    # Load model weights
-    print(f"\nLoading model weights...")
-    weights, model_data = load_model_weights_and_metadata(model_path)
+    # extract weights form the model
+    model_data = torch.load(model_path, map_location='cpu', weights_only=False)
+    weights_list = []
+    idx = 0
+    while f"weights.{idx}" in model_data["model_state_dict"]:
+        weights_list.append(model_data["model_state_dict"][f"weights.{idx}"].numpy())
+        idx += 1
+    weights = np.stack(weights_list, axis=0)
 
-    # Process BVH data to get segment motion IDs
+    args.bvh_dir = DEFAULT_DATA_DIR
     segment_motion_ids = load_segment_motion_ids(args.bvh_dir, args.cutoff_freq)
-
-    if segment_motion_ids is None:
-        print(f"\n⚠️  Warning: Could not load segment motion IDs from BVH data")
-        print(f"    Creating dummy labels (all segments = one group)")
-        segment_motion_ids = np.zeros(weights.shape[0], dtype=int)
-    elif len(segment_motion_ids) != weights.shape[0]:
-        print(f"\n⚠️  Warning: Segment count mismatch!")
-        print(f"    Model has {weights.shape[0]} segments")
-        print(f"    BVH data has {len(segment_motion_ids)} segments")
-        print(f"    Using min({weights.shape[0]}, {len(segment_motion_ids)}) segments")
-        min_segments = min(weights.shape[0], len(segment_motion_ids))
-        weights = weights[:min_segments]
-        segment_motion_ids = segment_motion_ids[:min_segments]
 
     # Run analyses
     print(f"\n{'=' * 70}")
-    print("ANALYSIS 1: MP Weights Across Movements and Joints".center(70))
+    print("MP Weights Across Movements".center(70))
     print(f"{'=' * 70}")
-    output_dir = "../../results/tmp_configs/new_seg_mp_model_20_cutoff_6.0_tpoints_30/weights_analysis"
-    compare_weights_across_movements(weights, segment_motion_ids,
-                                     motion_id_to_name, output_dir)
+    output_dir = os.path.join(model_subdir,"weights_analysis")
+    compare_weights_across_movements(weights, segment_motion_ids,motion_id_to_name,
+                                     output_dir)
 
-    print(f"\n{'=' * 70}")
-    print("ANALYSIS 2: Coordinate Variance Among Joints".center(70))
-    print(f"{'=' * 70}")
-    variance_results = analyze_coordinate_variance(
-        weights, segment_motion_ids, motion_id_to_name,
-        coord_idx=1, save_dir=output_dir
-    )
+    # print(f"\n{'=' * 70}")
+    # print("ANALYSIS 2: Coordinate Variance Among Joints".center(70))
+    # print(f"{'=' * 70}")
+    # variance_results = analyze_coordinate_variance(
+    #     weights, segment_motion_ids, motion_id_to_name,
+    #     coord_idx=1, save_dir=output_dir
+    # )
 
-    print(f"\n{'=' * 70}")
-    print(f"ANALYSIS 3: Joint-Specific coordinate -Variance & Significance".center(70))
-    print(f"{'=' * 70}")
-    avg_vars, std_vars, f_stat, p_value = analyze_joint_coord_variance(
-        weights, segment_motion_ids, motion_id_to_name,coord_idx=1, save_dir=output_dir
-    )
-
-
+    # print(f"\n{'=' * 70}")
+    # print(f"ANALYSIS 3: Joint-Specific coordinate -Variance & Significance".center(70))
+    # print(f"{'=' * 70}")
+    # avg_vars, std_vars, f_stat, p_value = analyze_joint_coord_variance(
+    #     weights, segment_motion_ids, motion_id_to_name,coord_idx=1, save_dir=output_dir
+    # )
 
 if __name__ == "__main__":
     main()

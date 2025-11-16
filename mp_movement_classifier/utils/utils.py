@@ -13,25 +13,59 @@ from scipy.signal import butter, filtfilt, find_peaks
 from mp_movement_classifier.tmp_extraction.TMP_model import MP_model
 from mp_movement_classifier.utils import config
 
+# ATTENTION
+### values for json to csv functions:
+# H36M_KEYPOINT_NAMES = [
+#     'Hip', 'RHip', 'RKnee', 'RAnkle', 'LHip', 'LKnee', 'LAnkle',
+#     'Spine', 'Thorax', 'Neck', 'Head',
+#     'LShoulder', 'LElbow', 'LWrist', 'RShoulder', 'RElbow', 'RWrist'
+# ]
+#
+# # Define connections between joints for visualization (based on Human3.6M skeleton)
+# SKELETON_CONNECTIONS = [
+#     (0, 1), (0, 4),       # Hip to RHip, Hip to LHip
+#     (1, 2), (2, 3),       # Right leg
+#     (4, 5), (5, 6),       # Left leg
+#     (0, 7), (7, 8),       # Spine to thorax
+#     (8, 9), (9, 10),      # Thorax to head
+#     (8, 11), (11, 12), (12, 13),  # Left arm
+#     (8, 14), (14, 15), (15, 16)   # Right arm
+# ]
 
+#### values for csv to bvh format consistant with final bvh format
 H36M_KEYPOINT_NAMES = [
-    'Hip', 'RHip', 'RKnee', 'RAnkle', 'LHip', 'LKnee', 'LAnkle',
-    'Spine', 'Thorax', 'Neck', 'Head',
-    'LShoulder', 'LElbow', 'LWrist', 'RShoulder', 'RElbow', 'RWrist'
+    'Hip', 'RightHip', 'RightKnee', 'RightAnkle', 'LeftHip', 'LeftKnee', 'LeftAnkle',
+    'Spine', 'Thorax', 'Neck', 'HeadEndSite', 'LeftShoulder', 'LeftElbow', 'LeftWrist',
+    'RightShoulder', 'RightElbow', 'RightWrist'
 ]
 
-# Define connections between joints for visualization (based on Human3.6M skeleton)
+# CORRECTED: Skeleton connections matching the H36M skeleton structure (17 joints)
 SKELETON_CONNECTIONS = [
-    (0, 1), (0, 4),       # Hip to RHip, Hip to LHip
-    (1, 2), (2, 3),       # Right leg
-    (4, 5), (5, 6),       # Left leg
-    (0, 7), (7, 8),       # Spine to thorax
-    (8, 9), (9, 10),      # Thorax to head
-    (8, 11), (11, 12), (12, 13),  # Left arm
-    (8, 14), (14, 15), (15, 16)   # Right arm
+    # Core body connections
+    (0, 1), (0, 4),  # Hip -> RightHip, Hip -> LeftHip
+    (0, 7),  # Hip -> Spine
+    (7, 8),  # Spine -> Thorax
+    (8, 9),  # Thorax -> Neck
+    (9, 10),  # Neck -> HeadEndSite
+
+    # Right leg
+    (1, 2),  # RightHip -> RightKnee
+    (2, 3),  # RightKnee -> RightAnkle
+
+    # Left leg
+    (4, 5),  # LeftHip -> LeftKnee
+    (5, 6),  # LeftKnee -> LeftAnkle
+
+    # Left arm
+    (8, 11),  # Thorax -> LeftShoulder
+    (11, 12),  # LeftShoulder -> LeftElbow
+    (12, 13),  # LeftElbow -> LeftWrist
+
+    # Right arm
+    (8, 14),  # Thorax -> RightShoulder
+    (14, 15),  # RightShoulder -> RightElbow
+    (15, 16),  # RightElbow -> RightWrist
 ]
-
-
 
 # Global dictionary to persist motion mappings across function calls
 MOTION_MAPPING = {}
@@ -323,13 +357,12 @@ def segment_motion_trajectories(motion_data, joints, frame_time,
         Tuple of (segments, boundary_frames, joint_speeds)
     """
     print("\n📊 Motion Segments")
-    # Compute joint speeds
     joint_speeds = compute_joint_speed(motion_data, joints, frame_time,
                                        wrist_joints, ankle_joints)
     # print("joint speed:",joint_speeds)
     # Minimum distance in frames
     min_frames = int(min_boundary_distance / frame_time)
-    min_frames = 5 # i manually change it to 5 instead of 4
+    # min_frames = 5 # i manually change it to 5 instead of 4
     # min_frames for the paper was 160 milisecond for 120 Hz means 19 frames
 
     print(f"Minimum distance in frames: {min_frames}")
@@ -338,18 +371,14 @@ def segment_motion_trajectories(motion_data, joints, frame_time,
     peaks, _ = find_peaks(-joint_speeds, distance=min_frames)
     # print(f"Peaks: {peaks}")
 
-    # Add start and end frames
     boundary_frames = [0] + list(peaks) + [len(joint_speeds) - 1]
     # print(f"boundary_frames: {boundary_frames}")
     boundary_frames.sort()
 
-    # Create segments
     boundaries = [boundary_frames[i:i + 2] for i in range(len(boundary_frames) - 1)]
     segments = [motion_data[boundary_frames[i]:boundary_frames[i + 1],:] for i in range(len(boundary_frames) - 1)]
 
-    # Create time vector
     time_vector = np.arange(len(joint_speeds)) * frame_time
-
 
     print(f"Duration of complete video : {len(joint_speeds)* frame_time} seconds")
     print(f"Number of segments: {len(segments)}")
@@ -385,13 +414,15 @@ def process_bvh_data(data_dir, motion_ids, cutoff_freq=6.0):
         joints, motion_data, frame_time, frames = parse_bvh_robust(file_dir)
 
         # Apply Butterworth filter
-        smoothed_motion_data = filter_motion_data(motion_data, cutoff_freq=cutoff_freq,sampling_rate =30)
+        # smoothed_motion_data = filter_motion_data(motion_data, cutoff_freq=cutoff_freq,sampling_rate =30)
+        smoothed_motion_data = motion_data
 
         # Apply temporal segmentation
         segments, boundaries,boundary_frames, speeds = segment_motion_trajectories(
             smoothed_motion_data,
             joints,
-            frame_time
+            frame_time,
+            min_boundary_distance = 1 # 1 second
         )
 
         # print(f"   ✅ Found {len(segments)} motion segments")
@@ -401,15 +432,14 @@ def process_bvh_data(data_dir, motion_ids, cutoff_freq=6.0):
 
                 processed_segments.append(segment.T)  # Transpose to [signals, time]
                 segment_motion_ids.append(motion_id)
-            # print("\n******  with segmentation")
-            # print("segment first: ", segment[:,10])
+        #     print("\n******  with segmentation")
+        #     print("segment first: ", segment[:,10])
 
-        # pass without segmentation --> 1540 segments
-        # processed_segments.append(smoothed_motion_data.T) # the format of each segment should be [signals,time]
+        # pass without segmentation
+        # processed_segments.append(smoothed_motion_data.T)# the format of each segment should be [signals,time
+        # segment_motion_ids.append(motion_id)
         # print("\n#### without segmentation")
         # print("segment first: ", smoothed_motion_data[:, 10])
-
-
 
     if not processed_segments:
         raise ValueError("No segments could be processed")

@@ -11,8 +11,10 @@ from mp_movement_classifier.utils.utils import (
     process_bvh_data,
     read_bvh_files,
     save_model_with_full_state,
-
+    segment_motion_trajectories,
+    parse_bvh_robust,
 )
+
 from mp_movement_classifier.utils.plotting import (
     plot_learn_curve, plot_mp,
     plot_reconstructions,
@@ -20,7 +22,7 @@ from mp_movement_classifier.utils.plotting import (
 )
 from mp_movement_classifier.utils import config
 
-DEFAULT_DATA_DIR = "../../data/bvh_files"
+DEFAULT_DATA_DIR = "../../data/expmap_bvh_files"
 DEFAULT_TAIL_WINDOW = 50
 MODEL_NAME_SUFFIX: Optional[str] = None
 
@@ -43,10 +45,11 @@ def prepare_save_paths(num_mps: int, cutoff_freq: float, num_t_points: int, mode
     Prepare save paths for model and figures.
     """
     # Organize outputs under a dedicated directory
-    model_dir = os.path.join(config.SAVING_DIR, f"mp_model_{num_mps}_cutoff_{cutoff_freq}_tpoints_{num_t_points}")
+    # model_dir = os.path.join(config.SAVING_DIR, f"mp_model_{num_mps}_cutoff_{cutoff_freq}_tpoints_{num_t_points}")
+    model_dir = os.path.join(config.SAVING_DIR, f"expmap_mp_model_{num_mps}")
     os.makedirs(model_dir, exist_ok=True)
 
-    model_name = f"mp_model_{num_mps}_PC_init_cutoff_{cutoff_freq}_tpoints_{num_t_points}"
+    model_name = f"mp_model_{num_mps}_PC_tpoints_{num_t_points}"
     if model_name_suffix:
         model_name = f"{model_name}_{model_name_suffix}"
 
@@ -175,18 +178,43 @@ def main() -> None:
     bvh_data, motion_ids = read_bvh_files(data_dir)
 
     # Preprocess data including the segmentation step
-    # print(f"Processing BVH data with cutoff frequency: {args.cutoff_freq}")
-    processed_data, segment_motion_ids = process_bvh_data(
+    print(f"Processing BVH data with cutoff frequency: {args.cutoff_freq}")
+    processed_segments, segment_motion_ids = process_bvh_data(
         data_dir,
         motion_ids,
         cutoff_freq=args.cutoff_freq,
     )
 
-    if not processed_data:
-        raise RuntimeError("No processed data segments found. Check the input directory and preprocessing parameters.")
+    # if not processed_data:
+    #     raise RuntimeError("No processed data segments found. Check the input directory and preprocessing parameters.")
 
-    num_segments = len(processed_data)
-    num_signals = processed_data[0].shape[0]
+    # processed_segments = []
+    # segment_motion_ids = []
+    # bvh_files = [f for f in os.listdir(data_dir) if f.lower().endswith('.bvh')]
+    #
+    # for file, motion_id in zip(bvh_files, motion_ids):
+    #     file_dir = os.path.join(data_dir, file)
+    #     # print(f"Processing {file_dir} with motion ID {motion_id}")
+    #     joints, motion_data, frame_time, frames = parse_bvh_robust(file_dir)
+
+        # Apply temporal segmentation
+        # segments, boundaries, boundary_frames, speeds = segment_motion_trajectories(
+        #     motion_data,
+        #     joints,
+        #     frame_time,
+        #     min_boundary_distance=1  # 1 second
+        # )
+        #
+        # min_segment_length = 10
+        # for segment in segments:
+        #     if segment.shape[0] >= min_segment_length:
+        #         processed_segments.append(segment.T)  # Transpose to [signals, time]
+        #         segment_motion_ids.append(motion_id)
+
+
+    processed_data = processed_segments
+    num_segments = len(processed_segments)
+    num_signals = processed_segments[0].shape[0]
     print(f"num of segments : {num_segments}")
     print(f"num of signal   : {num_signals}")
 

@@ -1,347 +1,523 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, PillowWriter, FFMpegWriter
-
 import os
 from mpl_toolkits.mplot3d import Axes3D
 import warnings
+import re
+import sys
 
-# Joint names from your skeleton
-JOINT_NAMES = [
-    'Hip', 'RHip', 'RKnee', 'RAnkle', 'LHip', 'LKnee', 'LAnkle',
-    'Spine', 'Thorax', 'Neck', 'Head',
-    'LShoulder', 'LElbow', 'LWrist', 'RShoulder', 'RElbow', 'RWrist'
-]
-
-# Define skeleton connections (bone structure)
-SKELETON_CONNECTIONS = [
-    # Spine chain
-    ('Hip', 'Spine'),
-    ('Spine', 'Thorax'),
-    ('Thorax', 'Neck'),
-    ('Neck', 'Head'),
-
-    # Right leg
-    ('Hip', 'RHip'),
-    ('RHip', 'RKnee'),
-    ('RKnee', 'RAnkle'),
-
-    # Left leg
-    ('Hip', 'LHip'),
-    ('LHip', 'LKnee'),
-    ('LKnee', 'LAnkle'),
-
-    # Right arm
-    ('Thorax', 'RShoulder'),
-    ('RShoulder', 'RElbow'),
-    ('RElbow', 'RWrist'),
-
-    # Left arm
-    ('Thorax', 'LShoulder'),
-    ('LShoulder', 'LElbow'),
-    ('LElbow', 'LWrist'),
-]
+from mp_movement_classifier.utils.utils import H36M_KEYPOINT_NAMES, SKELETON_CONNECTIONS
 
 
-def extract_joint_positions_from_bvh(joints, motion_data, frame_idx):
+def parse_bvh_hierarchy(file_path):
     """
-    Extract 3D positions of joints from BVH data at a specific frame.
-
-    This is a simplified version - for real BVH you'd need to:
-    1. Apply hierarchical transformations
-    2. Use offset values from hierarchy
-
-    For now, we'll use a simplified approach focusing on angles.
+    Parse BVH file to extract hierarchy information including offsets and parent-child relationships
     """
-    positions = {}
+    with open(file_path, 'r') as file:
+        content = file.read()
 
-    # For each joint, extract its position data
-    for joint_name in JOINT_NAMES:
+    # Split into hierarchy and motion sections
+    parts = content.split('MOTION')
+    if len(parts) < 2:
+        return None, None, None
+
+    hierarchy_section = parts[0]
+    motion_section = parts[1]
+
+    # Parse hierarchy
+    joints = {}
+    joint_hierarchy = {}  # parent -> [children]
+    joint_parents = {}  # child -> parent
+    joint_offsets = {}  # joint -> offset vector
+    joint_order = []  # order of joints as they appear
+
+    lines = hierarchy_section.split('\n')
+    current_joint = None
+    joint_stack = []
+    channel_index = 0
+
+    for line in lines:
+        line = line.strip()
+
+        # Match ROOT or JOINT
+        joint_match = re.match(r'(ROOT|JOINT)\s+(\w+)', line)
+        if joint_match:
+            current_joint = joint_match.group(2)
+            joint_stack.append(current_joint)
+            joint_order.append(current_joint)
+
+            # Set parent-child relationships
+            if len(joint_stack) > 1:
+                parent = joint_stack[-2]
+                joint_parents[current_joint] = parent
+                if parent not in joint_hierarchy:
+                    joint_hierarchy[parent] = []
+                joint_hierarchy[parent].append(current_joint)
+            else:
+                joint_parents[current_joint] = None  # Root joint
+
+        # Match OFFSET
+        elif line.startswith('OFFSET') and current_joint:
+            offset_values = line.split()[1:4]
+            joint_offsets[current_joint] = np.array([float(x) for x in offset_values])
+
+        # Match CHANNELS
+        elif line.startswith('CHANNELS') and current_joint:
+            channel_match = re.match(r'CHANNELS\s+(\d+)\s+(.*)', line)
+            if channel_match:
+                num_channels = int(channel_match.group(1))
+                channels = channel_match.group(2).split()
+
+                joints[current_joint] = {
+                    'channels': channels,
+                    'start_index': channel_index,
+                    'num_channels': num_channels
+                }
+                channel_index += num_channels
+
+        # Match closing brace
+        elif line == '}' and joint_stack:
+            joint_stack.pop()
+
+    # Parse motion data
+    motion_lines = motion_section.strip().split('\n')
+    frames = 0
+    frame_time = 0.0
+
+    for line in motion_lines:
+        if line.startswith('Frames:'):
+            frames = int(line.split(':')[1].strip())
+        elif line.startswith('Frame Time:'):
+            frame_time = float(line.split(':')[1].strip())
+
+    # Extract motion data
+    motion_data = []
+    for line in motion_lines:
+        line = line.strip()
+        if line and not line.startswith('Frames') and not line.startswith('Frame Time'):
+            try:
+                values = [float(x) for x in line.split()]
+                motion_data.append(values)
+            except ValueError:
+                continue
+
+    if motion_data:
+        motion_data = np.array(motion_data)
+    else:
+        return None
+
+    return {
+        'joints': joints,
+        'hierarchy': joint_hierarchy,
+        'parents': joint_parents,
+        'offsets': joint_offsets,
+        'joint_order': joint_order,
+        'motion_data': motion_data,
+        'frame_time': frame_time,
+        'frames': frames
+    }
+
+
+def compute_joint_positions(bvh_data, frame_idx):
+    """
+    Compute 3D joint positions using CORRECTED BVH forward kinematics
+    """
+    joints = bvh_data['joints']
+    offsets = bvh_data['offsets']
+    parents = bvh_data['parents']
+    motion_data = bvh_data['motion_data']
+    joint_order = bvh_data['joint_order']
+
+    if frame_idx >= len(motion_data):
+        return {}
+
+    frame_data = motion_data[frame_idx]
+
+    # Store global transformations and final positions
+    joint_transforms = {}
+    joint_positions = {}
+
+    def create_rotation_matrix(rx, ry, rz, order='ZXY'):
+        """Create rotation matrix from Euler angles in degrees"""
+        # Convert to radians
+        rx, ry, rz = np.radians(rx), np.radians(ry), np.radians(rz)
+
+        # Individual rotation matrices
+        Rx = np.array([
+            [1, 0, 0, 0],
+            [0, np.cos(rx), -np.sin(rx), 0],
+            [0, np.sin(rx), np.cos(rx), 0],
+            [0, 0, 0, 1]
+        ])
+
+        Ry = np.array([
+            [np.cos(ry), 0, np.sin(ry), 0],
+            [0, 1, 0, 0],
+            [-np.sin(ry), 0, np.cos(ry), 0],
+            [0, 0, 0, 1]
+        ])
+
+        Rz = np.array([
+            [np.cos(rz), -np.sin(rz), 0, 0],
+            [np.sin(rz), np.cos(rz), 0, 0],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1]
+        ])
+
+        # BVH standard rotation order is ZXY
+        if order == 'ZXY':
+            return Rz @ Rx @ Ry
+        else:
+            return Rx @ Ry @ Rz
+
+    def get_joint_local_transform(joint_name):
+        """Get local transformation matrix for a joint"""
+        # Initialize with identity
+        local_transform = np.eye(4)
+
+        # Get joint info
         if joint_name not in joints:
-            continue
+            return local_transform
 
         joint_info = joints[joint_name]
-        start_idx = joint_info['start_index']
-        channels = joint_info['channels']
+        channels = joint_info.get('channels', [])
+        start_idx = joint_info.get('start_index', 0)
 
-        # Extract position (Xposition, Yposition, Zposition) or rotation data
-        pos = []
-        for i, channel in enumerate(channels):
-            if start_idx + i < motion_data.shape[1]:
-                pos.append(motion_data[frame_idx, start_idx + i])
-
-        positions[joint_name] = np.array(pos) if pos else np.zeros(3)
-
-    return positions
-
-
-def compute_forward_kinematics(joints, motion_data, frame_idx):
-    """
-    Compute 3D positions using forward kinematics.
-    This is a simplified version that builds the skeleton hierarchy.
-    """
-    # Initialize positions dictionary
-    positions_3d = {}
-
-    # Default offsets (you may need to extract these from BVH OFFSET data)
-    # These are approximate values in cm
-    joint_offsets = {
-        'Hip': np.array([0, 0, 0]),
-        'Spine': np.array([0, 10, 0]),
-        'Thorax': np.array([0, 20, 0]),
-        'Neck': np.array([0, 15, 0]),
-        'Head': np.array([0, 10, 0]),
-        'RHip': np.array([10, 0, 0]),
-        'RKnee': np.array([0, -40, 0]),
-        'RAnkle': np.array([0, -40, 0]),
-        'LHip': np.array([-10, 0, 0]),
-        'LKnee': np.array([0, -40, 0]),
-        'LAnkle': np.array([0, -40, 0]),
-        'RShoulder': np.array([15, 0, 0]),
-        'RElbow': np.array([0, -25, 0]),
-        'RWrist': np.array([0, -25, 0]),
-        'LShoulder': np.array([-15, 0, 0]),
-        'LElbow': np.array([0, -25, 0]),
-        'LWrist': np.array([0, -25, 0]),
-    }
-
-    # Start with Hip at origin
-    current_pos = np.array([0.0, 0.0, 0.0])
-
-    # Get Hip position if it has position channels
-    if 'Hip' in joints:
-        joint_info = joints['Hip']
-        start_idx = joint_info['start_index']
-        channels = joint_info['channels']
+        # Extract channel values
+        translations = [0.0, 0.0, 0.0]  # tx, ty, tz
+        rotations = [0.0, 0.0, 0.0]  # rx, ry, rz
 
         for i, channel in enumerate(channels):
-            if 'position' in channel.lower() and start_idx + i < motion_data.shape[1]:
-                channel_name = channel.lower()
-                value = motion_data[frame_idx, start_idx + i]
-                if 'xposition' in channel_name:
-                    current_pos[0] = value
-                elif 'yposition' in channel_name:
-                    current_pos[1] = value
-                elif 'zposition' in channel_name:
-                    current_pos[2] = value
+            if start_idx + i >= len(frame_data):
+                continue
 
-    positions_3d['Hip'] = current_pos.copy()
+            value = frame_data[start_idx + i]
+            channel_lower = channel.lower()
 
-    # Build skeleton hierarchy (simplified)
-    # For each joint, add offset from parent
-    hierarchy = {
-        'Hip': ['Spine', 'RHip', 'LHip'],
-        'Spine': ['Thorax'],
-        'Thorax': ['Neck', 'RShoulder', 'LShoulder'],
-        'Neck': ['Head'],
-        'RHip': ['RKnee'],
-        'RKnee': ['RAnkle'],
-        'LHip': ['LKnee'],
-        'LKnee': ['LAnkle'],
-        'RShoulder': ['RElbow'],
-        'RElbow': ['RWrist'],
-        'LShoulder': ['LElbow'],
-        'LElbow': ['LWrist'],
-    }
+            if 'position' in channel_lower or 'translation' in channel_lower:
+                if 'x' in channel_lower:
+                    translations[0] = value
+                elif 'y' in channel_lower:
+                    translations[1] = value
+                elif 'z' in channel_lower:
+                    translations[2] = value
 
-    def build_chain(parent_name, parent_pos):
-        if parent_name not in hierarchy:
-            return
+            elif 'rotation' in channel_lower:
+                if 'x' in channel_lower:
+                    rotations[0] = value
+                elif 'y' in channel_lower:
+                    rotations[1] = value
+                elif 'z' in channel_lower:
+                    rotations[2] = value
 
-        for child_name in hierarchy[parent_name]:
-            if child_name in joint_offsets:
-                child_pos = parent_pos + joint_offsets[child_name]
-                positions_3d[child_name] = child_pos
-                build_chain(child_name, child_pos)
+        # Apply translation (for root joint usually)
+        local_transform[0:3, 3] = translations
 
-    build_chain('Hip', positions_3d['Hip'])
+        # Apply rotations if any exist
+        if any(r != 0.0 for r in rotations):
+            rotation_matrix = create_rotation_matrix(rotations[0], rotations[1], rotations[2])
+            local_transform = local_transform @ rotation_matrix
 
-    return positions_3d
+        return local_transform
+
+    def compute_global_transform(joint_name):
+        """Compute global transformation matrix for joint"""
+        if joint_name in joint_transforms:
+            return joint_transforms[joint_name]
+
+        # Get local transformation
+        local_transform = get_joint_local_transform(joint_name)
+
+        # Create offset transformation (bone length from parent to this joint)
+        offset_transform = np.eye(4)
+        if joint_name in offsets:
+            offset_transform[0:3, 3] = offsets[joint_name]
+
+        # Get parent transformation
+        parent_name = parents.get(joint_name)
+        if parent_name is None:
+            # Root joint: apply local transform, then offset
+            global_transform = local_transform @ offset_transform
+        else:
+            # Child joint: parent_transform * local_transform * offset
+            parent_transform = compute_global_transform(parent_name)
+            global_transform = parent_transform @ local_transform @ offset_transform
+
+        joint_transforms[joint_name] = global_transform
+        return global_transform
+
+    # Compute positions for all joints
+    for joint_name in joint_order:
+        if joint_name in joints or joint_name in offsets:
+            transform = compute_global_transform(joint_name)
+            # Extract position from transformation matrix
+            joint_positions[joint_name] = transform[0:3, 3].copy()
+
+    return joint_positions
 
 
-def create_segment_animation(bvh_filename, segment_idx, segment_frames,
-                             joints, motion_data, frame_time,
-                             output_dir="../../results/segment_animations",
-                             format = 'mp4'):
+def debug_bvh_structure(bvh_data):
+    """Debug function to analyze BVH structure"""
+    print("🔍 BVH Structure Analysis:")
+    print(f"   Joint order: {bvh_data['joint_order']}")
+    print(f"   Parent relationships:")
+    for joint, parent in bvh_data['parents'].items():
+        print(f"     {joint} -> parent: {parent}")
+
+    print(f"   Offsets:")
+    for joint, offset in bvh_data['offsets'].items():
+        print(f"     {joint}: {offset}")
+
+    print(f"   Channels:")
+    for joint, info in bvh_data['joints'].items():
+        print(f"     {joint}: {info['channels']} (index: {info['start_index']})")
+
+
+def create_bvh_animation(bvh_file_path, start_frame=0, end_frame=None,
+                         output_path=None, format='mp4', title_prefix=""):
     """
-    Create and save animation for a specific motion segment.
-
-    Args:
-        bvh_filename: Name of the BVH file
-        segment_idx: Index of the segment
-        segment_frames: [start_frame, end_frame] for this segment
-        joints: Joint information from BVH parser
-        motion_data: Motion data array
-        frame_time: Time between frames
-        output_dir: Directory to save animations
+    Create animation from BVH file with CORRECTED forward kinematics
     """
-    start_frame, end_frame = segment_frames
+    # Parse BVH file
+    bvh_data = parse_bvh_hierarchy(bvh_file_path)
+    if bvh_data is None:
+        print("❌ Failed to parse BVH file")
+        return None
+
+    motion_data = bvh_data['motion_data']
+    frame_time = bvh_data['frame_time']
+
+    print(f"📋 BVH Skeleton Info:")
+    print(f"   Joints: {bvh_data['joint_order']}")
+    print(f"   Total joints: {len(bvh_data['joint_order'])}")
+
+    # DEBUG: Show BVH structure
+    debug_bvh_structure(bvh_data)
+
+    # Set frame range
+    if end_frame is None:
+        end_frame = len(motion_data) - 1
+
+    start_frame = max(0, start_frame)
+    end_frame = min(len(motion_data) - 1, end_frame)
     num_frames = end_frame - start_frame + 1
 
-    print(f"\n🎬 Creating animation for Segment {segment_idx}...")
-    print(f"   Frames: {start_frame} to {end_frame} ({num_frames} frames)")
-    print(f"   Duration: {(num_frames * frame_time):.2f} seconds")
+    print(f"🎬 Creating animation: frames {start_frame}-{end_frame} ({num_frames} frames)")
 
-    # Create output directory
-    os.makedirs(output_dir, exist_ok=True)
+    # DEBUG: Check first few frames
+    print("\n🔍 DEBUG: Checking first frame joint positions...")
+    first_frame_positions = compute_joint_positions(bvh_data, start_frame)
+    if first_frame_positions:
+        print("   First frame positions:")
+        for joint, pos in first_frame_positions.items():
+            print(f"     {joint}: [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}]")
 
-    # Set up the figure and 3D axis
-    fig = plt.figure(figsize=(12, 10))
+        # Check anatomical consistency
+        print("\n   🔍 Anatomical checks:")
+        if 'Hip' in first_frame_positions and 'RightHip' in first_frame_positions:
+            hip_pos = first_frame_positions['Hip']
+            rhip_pos = first_frame_positions['RightHip']
+            distance = np.linalg.norm(rhip_pos - hip_pos)
+            print(f"     Hip to RightHip distance: {distance:.3f}")
+
+        if 'RightHip' in first_frame_positions and 'RightKnee' in first_frame_positions:
+            rhip_pos = first_frame_positions['RightHip']
+            rknee_pos = first_frame_positions['RightKnee']
+            distance = np.linalg.norm(rknee_pos - rhip_pos)
+            print(f"     RightHip to RightKnee distance: {distance:.3f}")
+
+    else:
+        print("   ❌ No positions computed for first frame!")
+        return None
+
+    # Compute all positions (limit for testing)
+    test_frames = min(50, num_frames)
+    all_positions = []
+    for i in range(test_frames):
+        frame = start_frame + i
+        if frame % 10 == 0:
+            print(f"   Computing frame {frame}")
+
+        positions = compute_joint_positions(bvh_data, frame)
+        if positions:
+            all_positions.append(positions)
+
+    if not all_positions:
+        print("❌ No valid joint positions computed")
+        return None
+
+    print(f"📐 Successfully computed positions for {len(all_positions)} frames")
+
+    # Compute bounds
+    all_x, all_y, all_z = [], [], []
+    for positions in all_positions:
+        for joint_name, pos in positions.items():
+            if not (np.isnan(pos).any() or np.isinf(pos).any()):
+                all_x.append(pos[0])
+                all_y.append(pos[1])
+                all_z.append(pos[2])
+
+    if not all_x:
+        print("❌ No valid position data found")
+        return None
+
+    # Calculate proper bounds
+    x_min, x_max = min(all_x), max(all_x)
+    y_min, y_max = min(all_y), max(all_y)
+    z_min, z_max = min(all_z), max(all_z)
+
+    # Add reasonable margins
+    x_range, y_range, z_range = x_max - x_min, y_max - y_min, z_max - z_min
+    margin_x = max(x_range * 0.2, 0.3)
+    margin_y = max(y_range * 0.2, 0.3)
+    margin_z = max(z_range * 0.2, 0.3)
+
+    x_bounds = [x_min - margin_x, x_max + margin_x]
+    y_bounds = [y_min - margin_y, y_max + margin_y]
+    z_bounds = [z_min - margin_z, z_max + margin_z]
+
+    print(f"🔍 Position ranges:")
+    print(f"   X: {x_min:.2f} to {x_max:.2f} → bounds: [{x_bounds[0]:.2f}, {x_bounds[1]:.2f}]")
+    print(f"   Y: {y_min:.2f} to {y_max:.2f} → bounds: [{y_bounds[0]:.2f}, {y_bounds[1]:.2f}]")
+    print(f"   Z: {z_min:.2f} to {z_max:.2f} → bounds: [{z_bounds[0]:.2f}, {z_bounds[1]:.2f}]")
+
+    # Create animation
+    fig = plt.figure(figsize=(14, 10))
     ax = fig.add_subplot(111, projection='3d')
 
-    # Compute all positions for this segment
-    all_positions = []
-    for frame in range(start_frame, end_frame + 1):
-        positions = compute_forward_kinematics(joints, motion_data, frame)
-        all_positions.append(positions)
-
-    # Get bounds for consistent scaling
-    all_x = []
-    all_y = []
-    all_z = []
-    for positions in all_positions:
-        for pos in positions.values():
-            all_x.append(pos[0])
-            all_y.append(pos[1])
-            all_z.append(pos[2])
-
-    x_range = [min(all_x) - 20, max(all_x) + 20]
-    y_range = [min(all_y) - 20, max(all_y) + 20]
-    z_range = [min(all_z) - 20, max(all_z) + 20]
-
-    # Initialize plot elements
-    lines = []
-    points = None
-
-    def init():
-        """Initialize animation"""
-        ax.clear()
-        ax.set_xlim(x_range)
-        ax.set_ylim(y_range)
-        ax.set_zlim(z_range)
-        ax.set_xlabel('X (cm)')
-        ax.set_ylabel('Y (cm)')
-        ax.set_zlabel('Z (cm)')
-        ax.set_title(f'Motion Segment {segment_idx}\n'
-                     f'File: {bvh_filename} | Frames: {start_frame}-{end_frame}',
-                     fontsize=12, fontweight='bold')
-        return []
-
     def update(frame_idx):
-        """Update animation for each frame"""
-        nonlocal lines, points
-
-        # Clear previous frame
         ax.clear()
-        ax.set_xlim(x_range)
-        ax.set_ylim(y_range)
-        ax.set_zlim(z_range)
-        ax.set_xlabel('X (cm)')
-        ax.set_ylabel('Y (cm)')
-        ax.set_zlabel('Z (cm)')
+        ax.set_xlim(x_bounds)
+        ax.set_ylim(y_bounds)
+        ax.set_zlim(z_bounds)
+        ax.set_xlabel('X', fontsize=10)
+        ax.set_ylabel('Y', fontsize=10)
+        ax.set_zlabel('Z', fontsize=10)
 
-        # Get positions for this frame
         positions = all_positions[frame_idx]
+        current_time = (start_frame + frame_idx) * frame_time
 
-        # Calculate time
-        current_time = frame_idx * frame_time
-        total_time = num_frames * frame_time
-
-        ax.set_title(f'Motion Segment {segment_idx}\n'
-                     f'Frame: {start_frame + frame_idx}/{end_frame} | '
-                     f'Time: {current_time:.2f}/{total_time:.2f}s',
+        ax.set_title(f'{title_prefix}BVH Motion (CORRECTED)\n'
+                     f'Frame: {start_frame + frame_idx + 1} | Time: {current_time:.2f}s',
                      fontsize=12, fontweight='bold')
 
-        # Draw skeleton connections
-        for joint1_name, joint2_name in SKELETON_CONNECTIONS:
-            if joint1_name in positions and joint2_name in positions:
-                pos1 = positions[joint1_name]
-                pos2 = positions[joint2_name]
+        # Draw skeleton based on actual BVH hierarchy
+        connections_drawn = 0
+        for joint_name in bvh_data['joint_order']:
+            parent_name = bvh_data['parents'].get(joint_name)
+            if parent_name and joint_name in positions and parent_name in positions:
+                pos1 = positions[parent_name]  # Parent position
+                pos2 = positions[joint_name]  # Child position
 
-                ax.plot3D([pos1[0], pos2[0]],
-                          [pos1[1], pos2[1]],
-                          [pos1[2], pos2[2]],
-                          'b-', linewidth=2, alpha=0.7)
+                # Draw bone
+                ax.plot3D([pos1[0], pos2[0]], [pos1[1], pos2[1]], [pos1[2], pos2[2]],
+                          'b-', linewidth=2.5, alpha=0.8)
+                connections_drawn += 1
 
-        # Draw joint points
-        joint_x = [pos[0] for pos in positions.values()]
-        joint_y = [pos[1] for pos in positions.values()]
-        joint_z = [pos[2] for pos in positions.values()]
+        # Draw joints
+        if positions:
+            for i, (joint_name, pos) in enumerate(positions.items()):
+                color = 'red' if 'Hip' in joint_name else 'blue'
+                size = 100 if joint_name == 'Hip' else 60
+                ax.scatter([pos[0]], [pos[1]], [pos[2]],
+                           c=color, s=size, alpha=0.9,
+                           edgecolors='black', linewidth=1)
 
-        ax.scatter(joint_x, joint_y, joint_z,
-                   c='red', marker='o', s=50, alpha=0.8)
+                # Label key joints
+                if joint_name in ['Hip', 'Neck', 'LeftWrist', 'RightWrist']:
+                    ax.text(pos[0], pos[1], pos[2], joint_name, fontsize=8)
 
-        # Add grid
+        if frame_idx == 0:
+            print(f"🔍 Frame 0: Drew {connections_drawn} skeleton connections")
+
         ax.grid(True, alpha=0.3)
+        ax.set_box_aspect([1, 1, 1])
+        ax.view_init(elev=10, azim=45)
 
         return []
 
     # Create animation
-    anim = FuncAnimation(fig, update, frames=num_frames,
-                         init_func=init, blit=False,
-                         interval=1000/30,  # Convert to milliseconds
-                         repeat=True)
+    anim = FuncAnimation(fig, update, frames=len(all_positions),
+                         interval=200, repeat=True, blit=False)
 
-    # Save animation
-    # output_path = os.path.join(output_dir,
-    #                            f"{bvh_filename}_segment_{segment_idx:02d}.gif")
-    #
-    # print(f"   💾 Saving animation to: {output_path}")
-    # writer = PillowWriter(fps=30)
-    # anim.save(output_path, writer=writer)
-    # Choose output format and writer
-    if format.lower() == 'mp4':
-        output_path = os.path.join(output_dir,
-                                   f"{bvh_filename}_segment_{segment_idx:02d}.mp4")
-        writer = FFMpegWriter(fps=30, bitrate=1800)
-    else:  # GIF format
-        output_path = os.path.join(output_dir,
-                                   f"{bvh_filename}_segment_{segment_idx:02d}.gif")
-        writer = PillowWriter(fps=30)
-
-    print(f"   💾 Saving {format.upper()} animation to: {output_path}")
-    anim.save(output_path, writer=writer)
-
-    plt.close(fig)
-    print(f"   ✅ Animation saved successfully!")
-
-    return output_path
+    # Save or show
+    if output_path:
+        try:
+            writer = FFMpegWriter(fps=15, bitrate=2000) if format.lower() == 'mp4' else PillowWriter(fps=15)
+            print(f"💾 Saving animation to: {output_path}")
+            anim.save(output_path, writer=writer)
+            print("✅ Animation saved successfully!")
+            plt.close(fig)
+            return output_path
+        except Exception as e:
+            print(f"❌ Error saving animation: {e}")
+            plt.close(fig)
+            return None
+    else:
+        plt.show()
+        return anim
 
 
 def create_all_segment_animations(bvh_filename, boundaries, joints, motion_data, frame_time):
     """
-    Create animations for all segments and save summary information.
-
-    Args:
-        bvh_filename: Name of the BVH file
-        boundaries: List of [start_frame, end_frame] pairs
-        joints: Joint information from BVH parser
-        motion_data: Motion data array
-        frame_time: Time between frames
+    Create animations using proper BVH parsing for complete sequence and segments
     """
     print("\n" + "=" * 80)
-    print("🎥 CREATING SEGMENT ANIMATIONS")
+    print("🎥 CREATING SEGMENT ANIMATIONS WITH PROPER BVH PARSING")
     print("=" * 80)
+
+    # Reconstruct BVH file path
+    bvh_file_path = f"../../data/bvh_files/{bvh_filename}.bvh"
+    if not os.path.exists(bvh_file_path):
+        print(f"❌ BVH file not found: {bvh_file_path}")
+        return []
 
     output_dir = os.path.join("../../results", "segment_animations", bvh_filename)
     os.makedirs(output_dir, exist_ok=True)
 
-    # Create animations for each segment
     animation_paths = []
+
+    # FIRST: Create complete sequence animation
+    print("\n🎬 Creating COMPLETE SEQUENCE animation...")
+    complete_output_path = os.path.join(output_dir, f"{bvh_filename}_complete_sequence.mp4")
+
+    complete_path = create_bvh_animation(
+        bvh_file_path=bvh_file_path,
+        start_frame=0,
+        end_frame=None,
+        output_path=complete_output_path,
+        format='mp4',
+        title_prefix="Complete Sequence - "
+    )
+
+    if complete_path:
+        animation_paths.append(complete_path)
+
+    # SECOND: Create individual segment animations
+    print(f"\n🎬 Creating individual segment animations...")
     for i, boundary in enumerate(boundaries, 1):
         try:
-            path = create_segment_animation(
-                bvh_filename, i, boundary,
-                joints, motion_data, frame_time,
-                output_dir
+            start_frame, end_frame = boundary[0], boundary[1]
+            segment_output_path = os.path.join(output_dir, f"{bvh_filename}_segment_{i:02d}.mp4")
+
+            segment_path = create_bvh_animation(
+                bvh_file_path=bvh_file_path,
+                start_frame=start_frame,
+                end_frame=end_frame,
+                output_path=segment_output_path,
+                format='mp4',
+                title_prefix=f"Segment {i} - "
             )
-            animation_paths.append(path)
+
+            if segment_path:
+                animation_paths.append(segment_path)
+
         except Exception as e:
             print(f"   ❌ Error creating animation for segment {i}: {e}")
             continue
 
     # Create summary file
-
     summary_path = os.path.join(output_dir, "segment_summary.txt")
     with open(summary_path, 'w') as f:
         f.write(f"Motion Segmentation Summary\n")
@@ -349,17 +525,18 @@ def create_all_segment_animations(bvh_filename, boundaries, joints, motion_data,
         f.write(f"File: {bvh_filename}.bvh\n")
         f.write(f"Total Segments: {len(boundaries)}\n")
         f.write(f"Frame Time: {frame_time:.4f} seconds\n\n")
+        f.write(f"Complete Sequence: {complete_output_path}\n\n")
 
         for i, boundary in enumerate(boundaries, 1):
-
             start, end = boundary[0], boundary[1]
-            duration = (end - start ) * frame_time
+            duration = (end - start) * frame_time
             f.write(f"Segment {i:2d}: Frames {start:4d}-{end:4d} | "
                     f"Duration: {duration:6.2f}s | "
                     f"Frames: {end - start + 1:4d}\n")
 
     print(f"\n📄 Summary saved to: {summary_path}")
     print(f"\n✅ All animations created successfully!")
+    print(f"📁 Complete sequence: {complete_output_path}")
     print(f"📁 Output directory: {output_dir}")
     print("=" * 80)
 

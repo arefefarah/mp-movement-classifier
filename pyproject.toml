@@ -12,6 +12,7 @@ packages = [
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.14"
+pymo = { path = "./PyMO", develop = true }
 
 # Core Scientific Computing
 numpy = "^2.2.6"
