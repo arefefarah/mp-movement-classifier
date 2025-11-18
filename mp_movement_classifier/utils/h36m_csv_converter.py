@@ -8,7 +8,7 @@ from bvh_converter import h36m_skeleton
 
 class H36MConverter:
     def __init__(self):
-        # Your skeleton structure
+        # skeleton structure
         self.joint_names = [
             'Hip', 'RHip', 'RKnee', 'RAnkle', 'LHip', 'LKnee', 'LAnkle',
             'Spine', 'Thorax', 'Neck', 'Head',
@@ -91,14 +91,14 @@ class H36MConverter:
 
         columns = []
         for joint_idx, joint_name in enumerate(self.joint_names):
-            columns.append(joint_name+"_alpha")
-            columns.append(joint_name + "_beta")
-            columns.append(joint_name + "_gamma")
+            columns.append(joint_name+"_x")
+            columns.append(joint_name+"_y")
+            columns.append(joint_name +"_z")
 
 
         # Create the DataFrame
         df = pd.DataFrame(channels, columns=columns)
-        df.to_csv(output_path, index=False) # index=False prevents writing the DataFrame index as a column
+        df.to_csv(output_path, index=False)
         print(f"file saved to {output_path}")
 
         return df

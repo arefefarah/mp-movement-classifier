@@ -416,7 +416,7 @@ def segment_expmap_csv(file_name,csv_file_path, wrist_joints , ankle_joints):
 
     plt.tight_layout()
 
-    figures_dir = os.path.join("./../../results", 'exp_map_segments')
+    figures_dir = os.path.join("./../../results", 'exp_map_segments_unfiltered')
     os.makedirs(figures_dir, exist_ok=True)
     plt.savefig(os.path.join(figures_dir, f"{file_name}_joint_trajectories_segmentation.png"),
                 dpi=300, bbox_inches='tight')
@@ -452,9 +452,9 @@ def calculate_joint_angular_speed(rotation_vectors, frame_rate=30):
 def main():
 
     # Configuration
-    filename = "subject_12_motion_05"
+    filename = "subject_12_motion_10"
     bvh_file = f"../../data/expmap_bvh_files/{filename}.bvh"
-    csv_file_path = f"../../data/expmap_csv_files/{filename}.csv"
+    csv_file_path = f"../../data/expmap_csv_files_unfiltered/{filename}.csv"
 
     # joints, motion_data, frame_time, frames = parse_bvh_robust(bvh_file)
     # print("updated nume of joints: ", len(joints))

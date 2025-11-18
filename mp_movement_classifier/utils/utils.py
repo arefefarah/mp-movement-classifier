@@ -66,7 +66,11 @@ SKELETON_CONNECTIONS = [
     (14, 15),  # RightShoulder -> RightElbow
     (15, 16),  # RightElbow -> RightWrist
 ]
-
+JOINT_NAMES = [
+            'Hip', 'RHip', 'RKnee', 'RAnkle', 'LHip', 'LKnee', 'LAnkle',
+            'Spine', 'Thorax', 'Neck', 'Head',
+            'LShoulder', 'LElbow', 'LWrist', 'RShoulder', 'RElbow', 'RWrist'
+        ]
 # Global dictionary to persist motion mappings across function calls
 MOTION_MAPPING = {}
 MOTION_ID_COUNTER = 0
@@ -124,6 +128,112 @@ def get_joint_channel_mapping():
 
     return joint_mapping
 
+def calculate_joint_angular_speed(rotation_vectors, frame_rate=30):
+    """
+    Calculate angular speed from rotation vectors (exponential maps)
+
+    Args:
+        rotation_vectors: [num_frames, 3] array of rotation vectors
+                         (one 3D rotation vector per frame)
+        frame_rate: frames per second (Hz)
+
+    Returns:
+        angular_speeds: [num_frames-1] array of angular speeds (radians/second)
+    """
+
+    dt = 1.0 / frame_rate  # Time between frames
+
+    # Get magnitude (angle) of each rotation vector
+    rotation_angles = np.linalg.norm(rotation_vectors, axis=1)  # [num_frames]
+
+    # Compute angular speed between consecutive frames
+    angular_speeds = np.abs(np.diff(rotation_angles)) / dt
+
+    return angular_speeds
+
+def process_exp_map_data(folder_path):
+    """
+    Apply Butterworth filter and segmentation to BVH motion data
+    """
+    motion_ids = []
+    processed_segments = []
+    segment_motion_ids = []
+    frame_time = 1/30
+    joints = JOINT_NAMES
+
+    csv_files = [f for f in os.listdir(folder_path) if f.lower().endswith('.csv')]
+    pattern = re.compile(r'motion_(\d+)')
+
+    for csv_file in csv_files:
+        motion_data = []
+        file_path = os.path.join(folder_path, csv_file)
+        match = pattern.search(csv_file)
+        if match:
+            motion_id = int(match.group(1))
+            with open(file_path, 'r', encoding='utf-8') as f:
+                motion_ids.append(motion_id)
+                print(f"Processing {file_path} with motion ID {motion_id}")
+                motion_df = pd.read_csv(file_path)
+                motion_array = motion_df.to_numpy()
+                motion_data.append(motion_array)
+
+                # Apply temporal segmentation
+                segments, boundaries = segment_expmap_csv(
+                    motion_df,
+                    wrist_joints=['LWrist', 'RWrist'],
+                    ankle_joints=['LAnkle', 'RAnkle']
+                )
+
+                print(f"   ✅ Found {len(segments)} motion segments")
+                min_segment_length = 10
+                for segment in segments:
+                    if segment.shape[0] >= min_segment_length:
+
+                        processed_segments.append(segment.T)  # Transpose to [signals, time]
+                        segment_motion_ids.append(motion_id)
+
+
+                # pass without segmentation
+                # processed_segments.append(motion_array.T)# the format of each segment should be [signals,time
+                # segment_motion_ids.append(motion_id)
+                # print("\n#### without segmentation")
+                # print("segment first: ", motion_array[:, 10])
+
+    if not processed_segments:
+        raise ValueError("No segments could be processed")
+
+    return motion_ids,processed_segments, segment_motion_ids
+
+def segment_expmap_csv(motion_df , wrist_joints , ankle_joints):
+
+    # motion_df = pd.read_csv(csv_file_path)
+    joint_speeds=0
+    for joint_name in wrist_joints + ankle_joints:
+        columns = [col for col in motion_df.columns if col.startswith(joint_name)]
+
+        selected_df = motion_df[columns]
+        rot_vec = selected_df.to_numpy() # 3 values of joint_name
+        joint_speed = calculate_joint_angular_speed(rot_vec)
+        joint_speeds += joint_speed
+
+    min_boundary_distance = 1 #1 second for now
+    frame_rate = 30
+    frame_time = 1 / frame_rate
+    min_frames = int(min_boundary_distance *frame_rate)
+    # min_frames = 30  # i manually change it to 6 instead of 4
+    print(f"Minimum distance in frames: {min_frames}")
+    peaks, _ = find_peaks(-joint_speeds, distance=min_frames)
+    boundary_frames = [0] + list(peaks) + [len(joint_speeds) - 1]
+    boundary_frames.sort()
+
+    boundaries = [boundary_frames[i:i + 2] for i in range(len(boundary_frames) - 1)]
+    segments = []
+    for boundary in boundaries:
+        seg_df = motion_df.iloc[boundary[0]:boundary[1], :]
+        segments.append(seg_df.to_numpy())
+    # segments = [motion_df.iloc[boundary[0]:boundary[1], :] for boundary in boundaries]
+
+    return segments,boundaries
 
 def read_bvh_files(folder_path):
     bvh_data = []

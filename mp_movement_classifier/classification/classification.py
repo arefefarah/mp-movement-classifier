@@ -30,6 +30,7 @@ import seaborn as sns  # noqa: E402
 
 from mp_movement_classifier.utils.utils import (
     load_model_with_full_state,
+    process_exp_map_data,
     process_bvh_data,
     read_bvh_files,
     save_model_with_full_state,
@@ -481,18 +482,21 @@ def main():
     out_dir = os.path.join(model_dir, "classification")
     model_path = model_file
 
-    folder_path = "../../data/expmap_bvh_files"
-    bvh_data, motion_ids = read_bvh_files(folder_path)
+    folder_path = "../../data/expmap_csv_files_unfiltered"
+    # bvh_data, motion_ids = read_bvh_files(folder_path)
+    #
+    # # Process data according to paper specifications
+    # processed_data, segment_motion_ids = process_bvh_data(
+    #     data_dir = folder_path,
+    #     motion_ids = motion_ids,
+    #     cutoff_freq= cutoff_freq,
+    # )
 
-    # Process data according to paper specifications
-    processed_data, segment_motion_ids = process_bvh_data(
-        data_dir = folder_path,
-        motion_ids = motion_ids,
-        cutoff_freq= cutoff_freq,
-    )
+    motion_ids, processed_segments, segment_motion_ids = process_exp_map_data(folder_path=folder_path)
+
     # based on TMP code: the format of data=list(segment_data[signals,time])
-    num_segments = len(processed_data)
-    num_signals = processed_data[0].shape[0]
+    num_segments = len(processed_segments)
+    num_signals = processed_segments[0].shape[0]
 
     model = load_model_with_full_state(
         model_path,
@@ -500,7 +504,7 @@ def main():
         num_signals=num_signals
     )
 
-    segment_lengths = np.array([segment.shape[1] for segment in processed_data])
+    segment_lengths = np.array([segment.shape[1] for segment in processed_segments])
     # print(f"shape of processed data :",processed_data[0].shape)
     recon_data = model.predict(segment_lengths, as_numpy=True)
     # print(f"shape of reconstructed data :", recon_data[0].shape)

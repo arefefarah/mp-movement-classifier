@@ -22,7 +22,7 @@ import json
 import argparse
 import sys
 
-from mp_movement_classifier.utils.utils import read_bvh_files, process_bvh_data
+from mp_movement_classifier.utils.utils import read_bvh_files, process_bvh_data,process_exp_map_data
 
 JOINT_NAMES = [
     'Hip', 'RHip', 'RKnee', 'RAnkle', 'LHip', 'LKnee', 'LAnkle',
@@ -30,14 +30,20 @@ JOINT_NAMES = [
     'LShoulder', 'LElbow', 'LWrist', 'RShoulder', 'RElbow', 'RWrist'
 ]
 
+# CHANNEL_NAMES = []
+# # Hip has 6 channels (position + rotation)
+# CHANNEL_NAMES.extend([f'{JOINT_NAMES[0]}_Xpos', f'{JOINT_NAMES[0]}_Ypos', f'{JOINT_NAMES[0]}_Zpos',
+#                       f'{JOINT_NAMES[0]}_Zrot', f'{JOINT_NAMES[0]}_Xrot', f'{JOINT_NAMES[0]}_Yrot'])
+# # All other joints have 3 channels (Zrotation, Xrotation, Yrotation)
+# for joint in JOINT_NAMES[1:]:
+#     CHANNEL_NAMES.extend([f'{joint}_Zrot', f'{joint}_Xrot', f'{joint}_Yrot'])
+# CHANNEL_NAMES = CHANNEL_NAMES[3:]
+# print(len(CHANNEL_NAMES))
+
 CHANNEL_NAMES = []
-# Hip has 6 channels (position + rotation)
-CHANNEL_NAMES.extend([f'{JOINT_NAMES[0]}_Xpos', f'{JOINT_NAMES[0]}_Ypos', f'{JOINT_NAMES[0]}_Zpos',
-                      f'{JOINT_NAMES[0]}_Zrot', f'{JOINT_NAMES[0]}_Xrot', f'{JOINT_NAMES[0]}_Yrot'])
-# All other joints have 3 channels (Zrotation, Xrotation, Yrotation)
-for joint in JOINT_NAMES[1:]:
-    CHANNEL_NAMES.extend([f'{joint}_Zrot', f'{joint}_Xrot', f'{joint}_Yrot'])
-CHANNEL_NAMES = CHANNEL_NAMES[3:]
+for joint in JOINT_NAMES:
+    CHANNEL_NAMES.extend([f'{joint}_X', f'{joint}_Y', f'{joint}_Z'])
+
 print(len(CHANNEL_NAMES))
 
 COORD_NAMES = ['X', 'Y', 'Z']
@@ -385,9 +391,9 @@ def main():
     motion_id_to_name = load_motion_mapping(DEFAULT_MOTION_MAPPING)
 
     # model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"pos_filtered_mp_model_20_cutoff_3_tpoints_30")
-    model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"pos_filtered_mp_model_10_1second_seg")
+    model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"expmap_mp_model_20")
     # model_name = "mp_model_20_PC_init_cutoff_3_tpoints_30"
-    model_name = "mp_model_10_PC_tpoints_30"
+    model_name = "mp_model_20_PC_tpoints_30"
 
     model_path = os.path.join(model_subdir,model_name)
 
@@ -401,7 +407,9 @@ def main():
     weights = np.stack(weights_list, axis=0)
 
     args.bvh_dir = DEFAULT_DATA_DIR
-    segment_motion_ids = load_segment_motion_ids(args.bvh_dir, args.cutoff_freq)
+    # segment_motion_ids = load_segment_motion_ids(args.bvh_dir, args.cutoff_freq)
+    folder_path = "../../data/expmap_csv_files_unfiltered"
+    motion_ids, processed_segments, segment_motion_ids = process_exp_map_data(folder_path=folder_path)
 
     # Run analyses
     print(f"\n{'=' * 70}")

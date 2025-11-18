@@ -173,7 +173,6 @@ class H36mSkeleton(object):
 
         # Extract angle
         angle = 2.0 * np.arccos(np.clip(w, -1, 1))
-
         # Extract axis
         sin_half_angle = np.sqrt(1 - w * w)
 
@@ -183,7 +182,6 @@ class H36mSkeleton(object):
         else:
             axis = np.array([x, y, z]) / sin_half_angle
 
-        # Rotation vector = axis * angle
         rotation_vector = axis * angle
 
         return rotation_vector
@@ -276,8 +274,8 @@ class H36mSkeleton(object):
             channel.extend(euler)
 
             ###### add this part to get rotations vector from quat
-            rot_vec = self.quaternion_to_rotation_vector(local_quat)
-            channel.extend(rot_vec)
+            # rot_vec = self.quaternion_to_rotation_vector(local_quat)
+            # channel.extend(rot_vec)
             ######
 
             for child in node.children[::-1]:
@@ -355,12 +353,14 @@ class H36mSkeleton(object):
                 z_dir = None
                 order = 'xzy'
             if order:
-                dcm = math3d.dcm_from_axis(x_dir, y_dir, z_dir, order)
-                quats[joint] = math3d.dcm2quat(dcm)
+                dcm = math3d.dcm_from_axis(x_dir, y_dir, z_dir, order) # Builds an orthogonal rotation matrix
+                quats[joint] = math3d.dcm2quat(dcm) # Convert rotation matrix to quaternion
             else:
                 quats[joint] = quats[self.parent[joint]].copy()
 
             local_quat = quats[joint].copy()
+            # get local qauternion from global quaternion
+            # Quaternion division removes the parent's rotation from the child's rotation
             if node.parent:
                 local_quat = math3d.quat_divide(
                     q=quats[joint], r=quats[node.parent.name]

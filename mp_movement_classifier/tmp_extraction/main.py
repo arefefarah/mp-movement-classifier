@@ -9,6 +9,7 @@ from TMP_model import MP_model
 from mp_movement_classifier.utils.utils import (
     load_model_with_full_state,
     process_bvh_data,
+    process_exp_map_data,
     read_bvh_files,
     save_model_with_full_state,
     segment_motion_trajectories,
@@ -22,7 +23,7 @@ from mp_movement_classifier.utils.plotting import (
 )
 from mp_movement_classifier.utils import config
 
-DEFAULT_DATA_DIR = "../../data/expmap_bvh_files"
+DEFAULT_DATA_DIR = "../../data/expmap_csv_files_unfiltered"
 DEFAULT_TAIL_WINDOW = 50
 MODEL_NAME_SUFFIX: Optional[str] = None
 
@@ -173,43 +174,19 @@ def main() -> None:
     tail_window = DEFAULT_TAIL_WINDOW
     model_name_suffix = MODEL_NAME_SUFFIX
 
+    motion_ids, processed_segments, segment_motion_ids = process_exp_map_data(folder_path=data_dir)
+
     # Load BVH data
-    print(f"Reading BVH files from: {data_dir}")
-    bvh_data, motion_ids = read_bvh_files(data_dir)
-
-    # Preprocess data including the segmentation step
-    print(f"Processing BVH data with cutoff frequency: {args.cutoff_freq}")
-    processed_segments, segment_motion_ids = process_bvh_data(
-        data_dir,
-        motion_ids,
-        cutoff_freq=args.cutoff_freq,
-    )
-
-    # if not processed_data:
-    #     raise RuntimeError("No processed data segments found. Check the input directory and preprocessing parameters.")
-
-    # processed_segments = []
-    # segment_motion_ids = []
-    # bvh_files = [f for f in os.listdir(data_dir) if f.lower().endswith('.bvh')]
+    # print(f"Reading BVH files from: {data_dir}")
+    # bvh_data, motion_ids = read_bvh_files(data_dir)
     #
-    # for file, motion_id in zip(bvh_files, motion_ids):
-    #     file_dir = os.path.join(data_dir, file)
-    #     # print(f"Processing {file_dir} with motion ID {motion_id}")
-    #     joints, motion_data, frame_time, frames = parse_bvh_robust(file_dir)
-
-        # Apply temporal segmentation
-        # segments, boundaries, boundary_frames, speeds = segment_motion_trajectories(
-        #     motion_data,
-        #     joints,
-        #     frame_time,
-        #     min_boundary_distance=1  # 1 second
-        # )
-        #
-        # min_segment_length = 10
-        # for segment in segments:
-        #     if segment.shape[0] >= min_segment_length:
-        #         processed_segments.append(segment.T)  # Transpose to [signals, time]
-        #         segment_motion_ids.append(motion_id)
+    # # Preprocess data including the segmentation step
+    # print(f"Processing BVH data with cutoff frequency: {args.cutoff_freq}")
+    # processed_segments, segment_motion_ids = process_bvh_data(
+    #     data_dir,
+    #     motion_ids,
+    #     cutoff_freq=args.cutoff_freq,
+    # )
 
 
     processed_data = processed_segments
