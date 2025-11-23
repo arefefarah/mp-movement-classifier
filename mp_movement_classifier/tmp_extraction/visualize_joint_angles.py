@@ -271,7 +271,7 @@ def segment_motion_trajectories(bvh_filename, motion_data, joints, frame_time,
     plt.tight_layout()
 
     # Save plot
-    figures_dir = os.path.join("./../../results", 'motion_segmentation')
+    # figures_dir = os.path.join("./../../result/tmp_configs/expmap_mp_model_20", 'motion_segmentation')
     model_dir = os.path.join(config.SAVING_DIR, f"expmap_mp_model_20")
     figures_dir = os.path.join(model_dir, "motion_segmentation")
     os.makedirs(figures_dir, exist_ok=True)
@@ -418,6 +418,8 @@ def segment_expmap_csv(file_name,csv_file_path, wrist_joints , ankle_joints):
 
     figures_dir = os.path.join("./../../results", 'exp_map_segments_unfiltered')
     os.makedirs(figures_dir, exist_ok=True)
+    model_dir = os.path.join("./../../results/tmp_configs", f"expmap_mp_model_20")
+    figures_dir = os.path.join(model_dir, "motion_segmentation")
     plt.savefig(os.path.join(figures_dir, f"{file_name}_joint_trajectories_segmentation.png"),
                 dpi=300, bbox_inches='tight')
     plt.close()
@@ -448,22 +450,121 @@ def calculate_joint_angular_speed(rotation_vectors, frame_rate=30):
 
     return angular_speeds
 
+def visualize_quat_csv(file_name,csv_file_path, wrist_joints , ankle_joints):
+
+    motion_df = pd.read_csv(csv_file_path)
+    joint_speeds=0
+    for joint_name in wrist_joints + ankle_joints:
+        columns = [col for col in motion_df.columns if col.startswith(joint_name)]
+
+        selected_df = motion_df[columns]
+        rot_vec = selected_df.to_numpy() # 3 values of joint_name
+        # joint_speed = calculate_joint_angular_speed(rot_vec)
+        # joint_speeds += joint_speed
+
+    min_boundary_distance = 1 #1 second for now
+    frame_rate = 30
+    frame_time = 1 / frame_rate
+    # min_frames = int(min_boundary_distance *frame_rate)
+    # # min_frames = 30  # i manually change it to 6 instead of 4
+    # print(f"Minimum distance in frames: {min_frames}")
+    # peaks, _ = find_peaks(-joint_speeds, distance=min_frames)
+    # boundary_frames = [0] + list(peaks) + [len(joint_speeds) - 1]
+    # # print(f"boundary_frames: {boundary_frames}")
+    # boundary_frames.sort()
+    #
+    # boundaries = [boundary_frames[i:i + 2] for i in range(len(boundary_frames) - 1)]
+    # segments = [motion_df.iloc[boundary[0]:boundary[1], :] for boundary in boundaries]
+    # print(f"len of segments: {len(segments)}")
+
+    # # Create time vector
+    time_vector = np.arange(motion_df.shape[0]) * frame_time
+
+    target_joints=["LWrist","LKnee","LElbow","LAnkle","Head","LShoulder"]
+
+    # Create plots
+    fig, axes = plt.subplots(len(target_joints), 1, figsize=(16, 5 * len(target_joints)))
+    if len(target_joints) == 1:
+        axes = [axes]
+
+    # Color palette
+    colors = ['red', 'green', 'blue', 'orange', 'purple', 'brown']
+
+    # Iterate through target joints
+    for i, joint_name in enumerate(target_joints):
+        columns = [col for col in motion_df.columns if col.startswith(joint_name)]
+        axis_angle_rep = motion_df[columns]
+        print(f"axis_angle_rep shape: {axis_angle_rep.shape}")
+
+        ax = axes[i]
+        ax.set_title(f'{joint_name} Joint rep with Motion Segments',
+                     fontsize=16, fontweight='bold')
+
+        # Plot each rotation channel
+        for idx,column in enumerate(columns):
+            color = colors[idx % len(colors)]
+            ax.plot(time_vector,motion_df[column],
+                    color=color,
+                    label=f'{column}',
+                    linewidth=1.5,
+                    alpha=0.7)
+
+        # # Plot segment boundaries
+        # for boundary in boundary_frames[1:-1]:  # Exclude first and last
+        #     ax.axvline(x=time_vector[boundary], color='r', linestyle='--', alpha=0.7)
+        #
+        # # Highlight segments with different colors
+        # segment_colors = plt.cm.viridis(np.linspace(0, 1, len(segments)))
+        # for j, segment in enumerate(segments):
+        #     boundary = boundaries[j]
+        #     start_time = time_vector[boundary[0]]
+        #     end_time = time_vector[boundary[1]]
+        #     ax.axvspan(start_time, end_time, color=segment_colors[j], alpha=0.2,
+        #                label=f'Segment {j + 1}')
+
+        ax.set_xlabel('Time (seconds)', fontsize=12)
+        ax.set_ylabel('Angle (degrees)', fontsize=12)
+        ax.legend(fontsize=10, loc='upper right')
+        ax.grid(True, alpha=0.3)
+        ax.set_xlim(0, time_vector[-1])
+
+    plt.tight_layout()
+
+    figures_dir = os.path.join("./../../results", 'quat_rep_visualization')
+    os.makedirs(figures_dir, exist_ok=True)
+    # model_dir = os.path.join("./../../results/tmp_configs", f"expmap_mp_model_20")
+    # figures_dir = os.path.join(model_dir, "motion_segmentation")
+    plt.savefig(os.path.join(figures_dir, f"{file_name}_joint_trajectories_segmentation.png"),
+                dpi=300, bbox_inches='tight')
+    plt.close()
+
+    # return segments,boundaries
 
 def main():
 
     # Configuration
-    filename = "subject_12_motion_10"
+    filename = "subject_16_motion_05"
     bvh_file = f"../../data/expmap_bvh_files/{filename}.bvh"
     csv_file_path = f"../../data/expmap_csv_files_unfiltered/{filename}.csv"
+    csv_file_path = f"../../data/quat_csv_files/{filename}.csv"
 
     # joints, motion_data, frame_time, frames = parse_bvh_robust(bvh_file)
     # print("updated nume of joints: ", len(joints))
 
-    segments,boundaries = segment_expmap_csv(filename,csv_file_path,wrist_joints=['LWrist', 'RWrist'],
-                                             ankle_joints=['LAnkle', 'RAnkle'])
+    # segments,boundaries = segment_expmap_csv(filename,csv_file_path,wrist_joints=['LWrist', 'RWrist'],
+    #                                          ankle_joints=['LAnkle', 'RAnkle'])
+    visualize_quat_csv(filename, csv_file_path, wrist_joints=['LWrist', 'RWrist'],
+                       ankle_joints=['LAnkle', 'RAnkle'])
 
 
-    # segments, boundaries, boundary_frames,speeds = segment_motion_trajectories(
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+# segments, boundaries, boundary_frames,speeds = segment_motion_trajectories(
     #     bvh_filename,
     #     motion_data,
     #     joints,
@@ -487,6 +588,3 @@ def main():
     #     speeds,
     #     frame_time
     # )
-
-if __name__ == "__main__":
-    main()

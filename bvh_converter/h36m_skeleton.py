@@ -19,7 +19,7 @@ class H36mSkeleton(object):
             'Spine': 7,
             'Thorax': 8,
             'Neck': 9,
-            'HeadEndSite': 10,
+            'Head': 10,
             'LeftShoulder': 11,
             'LeftElbow': 12,
             'LeftWrist': 13,
@@ -46,8 +46,8 @@ class H36mSkeleton(object):
             'LeftAnkleEndSite': [],
             'Spine': ['Thorax'],
             'Thorax': ['Neck', 'LeftShoulder', 'RightShoulder'],
-            'Neck': ['HeadEndSite'],
-            'HeadEndSite': [], # Head is an end site
+            'Neck': ['Head'],
+            'Head': [], # Head is an end site
             'LeftShoulder': ['LeftElbow'],
             'LeftElbow': ['LeftWrist'],
             'LeftWrist': ['LeftWristEndSite'],
@@ -85,7 +85,7 @@ class H36mSkeleton(object):
             'Spine': [0, 0, 1],
             'Thorax': [0, 0, 1],
             'Neck': [0, 0, 1],
-            'HeadEndSite': [0, 0, 1],
+            'Head': [0, 0, 1],
             'LeftShoulder': [1, 0, 0],
             'LeftElbow': [1, 0, 0],
             'LeftWrist': [1, 0, 0],
@@ -232,7 +232,7 @@ class H36mSkeleton(object):
             elif joint == 'Neck':
                 x_dir = None
                 y_dir = pose[index['Thorax']] - pose[joint_idx]
-                z_dir = pose[index['HeadEndSite']] - pose[index['Thorax']]
+                z_dir = pose[index['Head']] - pose[index['Thorax']]
                 order = 'zxy'
             elif joint == 'LeftShoulder':
                 x_dir = pose[index['LeftElbow']] - pose[joint_idx]
@@ -330,7 +330,7 @@ class H36mSkeleton(object):
             elif joint == 'Neck':
                 x_dir = None
                 y_dir = pose[index['Thorax']] - pose[joint_idx]
-                z_dir = pose[index['HeadEndSite']] - pose[index['Thorax']]
+                z_dir = pose[index['Head']] - pose[index['Thorax']]
                 order = 'zxy'
             elif joint == 'LeftShoulder':
                 x_dir = pose[index['LeftElbow']] - pose[joint_idx]
@@ -377,6 +377,98 @@ class H36mSkeleton(object):
 
         return channel
 
+    def pose2quat(self, pose, header):
+        channel = []
+        quats = {}
+        stack = [header.root]
+        while stack:
+            node = stack.pop()
+            joint = node.name
+            joint_idx = self.keypoint2index[joint]
+            print(joint)
+
+            if node.is_root:
+                channel.extend(pose[joint_idx])
+
+            index = self.keypoint2index
+            order = None
+            if joint == 'Hip':
+                x_dir = pose[index['LeftHip']] - pose[index['RightHip']]
+                y_dir = None
+                z_dir = pose[index['Spine']] - pose[joint_idx]
+                order = 'zyx'
+            elif joint in ['RightHip', 'RightKnee']:
+                child_idx = self.keypoint2index[node.children[0].name]
+                x_dir = pose[index['Hip']] - pose[index['RightHip']]
+                y_dir = None
+                z_dir = pose[joint_idx] - pose[child_idx]
+                order = 'zyx'
+            elif joint in ['LeftHip', 'LeftKnee']:
+                child_idx = self.keypoint2index[node.children[0].name]
+                x_dir = pose[index['LeftHip']] - pose[index['Hip']]
+                y_dir = None
+                z_dir = pose[joint_idx] - pose[child_idx]
+                order = 'zyx'
+            elif joint == 'Spine':
+                x_dir = pose[index['LeftHip']] - pose[index['RightHip']]
+                y_dir = None
+                z_dir = pose[index['Thorax']] - pose[joint_idx]
+                order = 'zyx'
+            elif joint == 'Thorax':
+                x_dir = pose[index['LeftShoulder']] - \
+                        pose[index['RightShoulder']]
+                y_dir = None
+                z_dir = pose[joint_idx] - pose[index['Spine']]
+                order = 'zyx'
+            elif joint == 'Neck':
+                x_dir = None
+                y_dir = pose[index['Thorax']] - pose[joint_idx]
+                z_dir = pose[index['Head']] - pose[index['Thorax']]
+                order = 'zxy'
+            elif joint == 'LeftShoulder':
+                x_dir = pose[index['LeftElbow']] - pose[joint_idx]
+                y_dir = pose[index['LeftElbow']] - pose[index['LeftWrist']]
+                z_dir = None
+                order = 'xzy'
+            elif joint == 'LeftElbow':
+                x_dir = pose[index['LeftWrist']] - pose[joint_idx]
+                y_dir = pose[joint_idx] - pose[index['LeftShoulder']]
+                z_dir = None
+                order = 'xzy'
+            elif joint == 'RightShoulder':
+                x_dir = pose[joint_idx] - pose[index['RightElbow']]
+                y_dir = pose[index['RightElbow']] - pose[index['RightWrist']]
+                z_dir = None
+                order = 'xzy'
+            elif joint == 'RightElbow':
+                x_dir = pose[joint_idx] - pose[index['RightWrist']]
+                y_dir = pose[joint_idx] - pose[index['RightShoulder']]
+                z_dir = None
+                order = 'xzy'
+            if order:
+                dcm = math3d.dcm_from_axis(x_dir, y_dir, z_dir, order) # Builds an orthogonal rotation matrix
+                quats[joint] = math3d.dcm2quat(dcm) # Convert rotation matrix to quaternion
+            else:
+                quats[joint] = quats[self.parent[joint]].copy()
+
+            local_quat = quats[joint].copy()
+            # get local qauternion from global quaternion
+            # Quaternion division removes the parent's rotation from the child's rotation
+            if node.parent:
+                local_quat = math3d.quat_divide(
+                    q=quats[joint], r=quats[node.parent.name]
+                )
+
+            ###### add this part to get quat
+            channel.extend(local_quat)
+            ######
+
+            for child in node.children[::-1]:
+                if not child.is_end_site:
+                    stack.append(child)
+
+        return channel
+
 
     def poses2bvh(self, poses_3d, header=None, output_file=None):
         if not header:
@@ -399,5 +491,17 @@ class H36mSkeleton(object):
         channels = []
         for frame, pose in enumerate(poses_3d):
             channels.append(self.pose2expmap(pose,header))
+
+        return channels
+
+    def poses2quat_csv(self, poses_3d,header=None,output_file=None):
+
+        if not header:
+            header = self.get_bvh_header(poses_3d)
+            # print("shape of poses_3d",poses_3d.shape)
+            # print(header.root.name)
+        channels = []
+        for frame, pose in enumerate(poses_3d):
+            channels.append(self.pose2quat(pose,header))
 
         return channels

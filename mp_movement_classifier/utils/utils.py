@@ -151,6 +151,34 @@ def calculate_joint_angular_speed(rotation_vectors, frame_rate=30):
 
     return angular_speeds
 
+
+def calculate_joint_linear_speed(positions, frame_rate=30):
+    """
+    Calculate linear speed from 3D position coordinates
+
+    Args:
+        positions: [num_frames, 3] array of 3D positions
+                  (x, y, z coordinates per frame)
+        frame_rate: frames per second (Hz)
+
+    Returns:
+        linear_speeds: [num_frames-1] array of linear speeds (units/second)
+                      where units are the same as position units (e.g., meters/second)
+    """
+
+    dt = 1.0 / frame_rate  # Time between frames
+
+    # Calculate displacement vectors between consecutive frames
+    displacements = np.diff(positions, axis=0)  # [num_frames-1, 3]
+
+    # Calculate Euclidean distance (magnitude of displacement)
+    distances = np.linalg.norm(displacements, axis=1)  # [num_frames-1]
+
+    # Compute linear speed
+    linear_speeds = distances / dt
+
+    return linear_speeds
+
 def process_exp_map_data(folder_path):
     """
     Apply Butterworth filter and segmentation to BVH motion data
@@ -213,7 +241,9 @@ def segment_expmap_csv(motion_df , wrist_joints , ankle_joints):
 
         selected_df = motion_df[columns]
         rot_vec = selected_df.to_numpy() # 3 values of joint_name
-        joint_speed = calculate_joint_angular_speed(rot_vec)
+        # joint_speed = calculate_joint_angular_speed(rot_vec)
+        joint_speed = calculate_joint_linear_speed(rot_vec) # add this line for 3d position coordinate instead of exp map
+        print("now using position data instead of exp map")
         joint_speeds += joint_speed
 
     min_boundary_distance = 1 #1 second for now

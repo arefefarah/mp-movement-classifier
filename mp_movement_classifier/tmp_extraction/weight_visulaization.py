@@ -391,9 +391,9 @@ def main():
     motion_id_to_name = load_motion_mapping(DEFAULT_MOTION_MAPPING)
 
     # model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"pos_filtered_mp_model_20_cutoff_3_tpoints_30")
-    model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"expmap_mp_model_20")
+    model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"position_mp_model_5")
     # model_name = "mp_model_20_PC_init_cutoff_3_tpoints_30"
-    model_name = "mp_model_20_PC_tpoints_30"
+    model_name = "mp_model_5_PC_tpoints_30"
 
     model_path = os.path.join(model_subdir,model_name)
 
@@ -408,7 +408,7 @@ def main():
 
     args.bvh_dir = DEFAULT_DATA_DIR
     # segment_motion_ids = load_segment_motion_ids(args.bvh_dir, args.cutoff_freq)
-    folder_path = "../../data/expmap_csv_files_unfiltered"
+    folder_path = "../../data/position_csv_files"
     motion_ids, processed_segments, segment_motion_ids = process_exp_map_data(folder_path=folder_path)
 
     # Run analyses

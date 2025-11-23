@@ -467,14 +467,14 @@ def analyze_feature_pca(
 def main():
     global data_dir, model_path
 
-    num_MPs = 20
+    num_MPs = 10
     cutoff_freq = 3.0
     tpoints = 30
     model_name = f"mp_model_{num_MPs}_cutoff_{cutoff_freq}"
     # model_dir = os.path.join(config.SAVING_DIR, f"mp_model_{num_MPs}_cutoff_{cutoff_freq}_tpoints_{tpoints}")
     # model_dir = os.path.join(config.SAVING_DIR, f"pos_filtered_mp_model_20_cutoff_3_tpoints_30")
-    model_dir = os.path.join(config.SAVING_DIR, f"expmap_mp_model_{num_MPs}")
-    model_file = os.path.join(model_dir, f"mp_model_20_PC_tpoints_30")
+    model_dir = os.path.join(config.SAVING_DIR, f"position_mp_model_{num_MPs}")
+    model_file = os.path.join(model_dir, f"mp_model_{num_MPs}_PC_tpoints_30")
 
     # model_file = os.path.join(model_dir, f"mp_model_{num_MPs}_PC_init_cutoff_{cutoff_freq}_tpoints_{tpoints}")
     # model_file = os.path.join(model_dir, "mp_model_20_PC_init_cutoff_3_tpoints_30")
@@ -482,7 +482,7 @@ def main():
     out_dir = os.path.join(model_dir, "classification")
     model_path = model_file
 
-    folder_path = "../../data/expmap_csv_files_unfiltered"
+    folder_path = "../../data/position_csv_files"
     # bvh_data, motion_ids = read_bvh_files(folder_path)
     #
     # # Process data according to paper specifications

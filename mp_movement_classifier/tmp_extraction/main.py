@@ -23,7 +23,7 @@ from mp_movement_classifier.utils.plotting import (
 )
 from mp_movement_classifier.utils import config
 
-DEFAULT_DATA_DIR = "../../data/expmap_csv_files_unfiltered"
+DEFAULT_DATA_DIR = "../../data/position_csv_files"
 DEFAULT_TAIL_WINDOW = 50
 MODEL_NAME_SUFFIX: Optional[str] = None
 
@@ -47,7 +47,7 @@ def prepare_save_paths(num_mps: int, cutoff_freq: float, num_t_points: int, mode
     """
     # Organize outputs under a dedicated directory
     # model_dir = os.path.join(config.SAVING_DIR, f"mp_model_{num_mps}_cutoff_{cutoff_freq}_tpoints_{num_t_points}")
-    model_dir = os.path.join(config.SAVING_DIR, f"expmap_mp_model_{num_mps}")
+    model_dir = os.path.join(config.SAVING_DIR, f"position_mp_model_{num_mps}")
     os.makedirs(model_dir, exist_ok=True)
 
     model_name = f"mp_model_{num_mps}_PC_tpoints_{num_t_points}"
