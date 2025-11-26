@@ -186,6 +186,7 @@ class H36mSkeleton(object):
 
         return rotation_vector
 
+
     def pose2euler(self, pose, header):
         channel = []
         quats = {}
@@ -385,7 +386,7 @@ class H36mSkeleton(object):
             node = stack.pop()
             joint = node.name
             joint_idx = self.keypoint2index[joint]
-            print(joint)
+            # print(joint)
 
             if node.is_root:
                 channel.extend(pose[joint_idx])

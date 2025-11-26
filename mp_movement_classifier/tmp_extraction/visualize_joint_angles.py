@@ -465,17 +465,6 @@ def visualize_quat_csv(file_name,csv_file_path, wrist_joints , ankle_joints):
     min_boundary_distance = 1 #1 second for now
     frame_rate = 30
     frame_time = 1 / frame_rate
-    # min_frames = int(min_boundary_distance *frame_rate)
-    # # min_frames = 30  # i manually change it to 6 instead of 4
-    # print(f"Minimum distance in frames: {min_frames}")
-    # peaks, _ = find_peaks(-joint_speeds, distance=min_frames)
-    # boundary_frames = [0] + list(peaks) + [len(joint_speeds) - 1]
-    # # print(f"boundary_frames: {boundary_frames}")
-    # boundary_frames.sort()
-    #
-    # boundaries = [boundary_frames[i:i + 2] for i in range(len(boundary_frames) - 1)]
-    # segments = [motion_df.iloc[boundary[0]:boundary[1], :] for boundary in boundaries]
-    # print(f"len of segments: {len(segments)}")
 
     # # Create time vector
     time_vector = np.arange(motion_df.shape[0]) * frame_time
@@ -509,18 +498,6 @@ def visualize_quat_csv(file_name,csv_file_path, wrist_joints , ankle_joints):
                     linewidth=1.5,
                     alpha=0.7)
 
-        # # Plot segment boundaries
-        # for boundary in boundary_frames[1:-1]:  # Exclude first and last
-        #     ax.axvline(x=time_vector[boundary], color='r', linestyle='--', alpha=0.7)
-        #
-        # # Highlight segments with different colors
-        # segment_colors = plt.cm.viridis(np.linspace(0, 1, len(segments)))
-        # for j, segment in enumerate(segments):
-        #     boundary = boundaries[j]
-        #     start_time = time_vector[boundary[0]]
-        #     end_time = time_vector[boundary[1]]
-        #     ax.axvspan(start_time, end_time, color=segment_colors[j], alpha=0.2,
-        #                label=f'Segment {j + 1}')
 
         ax.set_xlabel('Time (seconds)', fontsize=12)
         ax.set_ylabel('Angle (degrees)', fontsize=12)
@@ -534,7 +511,7 @@ def visualize_quat_csv(file_name,csv_file_path, wrist_joints , ankle_joints):
     os.makedirs(figures_dir, exist_ok=True)
     # model_dir = os.path.join("./../../results/tmp_configs", f"expmap_mp_model_20")
     # figures_dir = os.path.join(model_dir, "motion_segmentation")
-    plt.savefig(os.path.join(figures_dir, f"{file_name}_joint_trajectories_segmentation.png"),
+    plt.savefig(os.path.join(figures_dir, f"{file_name}_without_jumps_allcomponents.png"),
                 dpi=300, bbox_inches='tight')
     plt.close()
 
@@ -543,10 +520,10 @@ def visualize_quat_csv(file_name,csv_file_path, wrist_joints , ankle_joints):
 def main():
 
     # Configuration
-    filename = "subject_16_motion_05"
+    filename = "subject_10_motion_05"
     bvh_file = f"../../data/expmap_bvh_files/{filename}.bvh"
     csv_file_path = f"../../data/expmap_csv_files_unfiltered/{filename}.csv"
-    csv_file_path = f"../../data/quat_csv_files/{filename}.csv"
+    csv_file_path = f"../../data/quat_csv_files_withoutjumps_allcomponents/{filename}.csv"
 
     # joints, motion_data, frame_time, frames = parse_bvh_robust(bvh_file)
     # print("updated nume of joints: ", len(joints))

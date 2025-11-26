@@ -61,8 +61,8 @@ class H36MConverter:
         return channels, header
 
     def convert_to_csv(self, csv_path, output_path):
-        """Convert 3d postion CSV file to appropriate rep csv file"""
-        # Convert input CSV to numpy array
+        """Convert original data to quaternian  rep csv file"""
+
         poses_3d = self.convert_csv_to_numpy(csv_path)
 
         # Initialize H36M skeleton
@@ -83,9 +83,48 @@ class H36MConverter:
             columns.append(joint_name+"_y")
             columns.append(joint_name +"_z")
 
-
-        # Create the DataFrame
         df = pd.DataFrame(channels, columns=columns)
+
+        # ========== ADD THIS CODE BLOCK ==========
+        # Remove quaternion jumps starting from the second row
+
+        for row_idx in range(1, len(df)):
+            # Process each joint
+            for joint_name in self.joint_names:
+                # Define column names for this joint's quaternion components
+                w_col = f"{joint_name}_w"
+                x_col = f"{joint_name}_x"
+                y_col = f"{joint_name}_y"
+                z_col = f"{joint_name}_z"
+
+                # Extract previous frame's quaternion (row_idx - 1)
+                q_previous = np.array([
+                    df.loc[row_idx - 1, w_col],
+                    df.loc[row_idx - 1, x_col],
+                    df.loc[row_idx - 1, y_col],
+                    df.loc[row_idx - 1, z_col]
+                ])
+
+                # Extract current frame's quaternion (row_idx)
+                q_current = np.array([
+                    df.loc[row_idx, w_col],
+                    df.loc[row_idx, x_col],
+                    df.loc[row_idx, y_col],
+                    df.loc[row_idx, z_col]
+                ])
+
+                # Remove jumps by checking quaternion continuity
+                q_corrected = self.remove_jumps(q_previous, q_current)
+
+                # Update the dataframe with the corrected quaternion
+                df.loc[row_idx, w_col] = q_corrected[0]
+                df.loc[row_idx, x_col] = q_corrected[1]
+                df.loc[row_idx, y_col] = q_corrected[2]
+                df.loc[row_idx, z_col] = q_corrected[3]
+
+        # ========== END OF NEW CODE ==========
+
+
         df.to_csv(output_path, index=False)
         print(f"file saved to {output_path}")
 
@@ -137,6 +176,23 @@ class H36MConverter:
         plt.close()
         print(f"file saved to {os.path.join(figures_dir, output_path)}")
 
+    def remove_jumps(self, q_previous, q_current):
+        """
+        Remove jumps from quaternion
+        q: quaternion[w, x, y, z]
+        """
+
+        w_pre, x_pre, y_pre, z_pre = q_previous
+        w_cur, x_cur, y_cur, z_cur = q_current
+
+        v1 = np.array([w_pre,x_pre, y_pre, z_pre])
+        v2 = np.array([w_cur,x_cur, y_cur, z_cur])
+        result_dot = np.dot(v1, v2)
+        if result_dot < 0:
+            q_current = -q_current
+
+        return q_current
+
     def convert_position_to_csv(self, csv_path, output_path):
         """Convert 3d postion CSV file to appropriate rep csv file"""
         # Convert input CSV to numpy array
@@ -158,6 +214,7 @@ class H36MConverter:
             for joint_idx, joint_name in enumerate(self.joint_names):
                 data_frame.extend(pose[joint_idx,:])
             data.append(data_frame)
+
         # Create the DataFrame
         df = pd.DataFrame(data, columns=columns)
         df.to_csv(output_path, index=False)

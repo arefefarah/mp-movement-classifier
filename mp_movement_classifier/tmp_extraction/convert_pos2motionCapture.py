@@ -8,7 +8,7 @@ converter = H36MConverter()
 path = Path("../../data/MMpose/df_files_3d")
 
 # Create output directory for BVH files
-output_dir = Path("../../data/position_csv_files")
+output_dir = Path("../../data/quat_csv_files_withoutjumps_allcomponents")
 output_dir.mkdir(exist_ok=True)
 
 with open('../../data/common_motion_mapping.json', 'r') as f:
@@ -26,9 +26,9 @@ for csv_file in path.glob("*.csv"):
     # try:
         # channels, header = converter.convert_to_bvh(str(csv_file), str(bvh_file))
         # print(len(channels[0]))
-    # df = converter.convert_to_csv(str(csv_file), str(out_file))
+    df = converter.convert_to_csv(str(csv_file), str(out_file))
     # converter.plot_pos_rep(str(csv_file), str(csv_file.name.replace(".csv", ".png")))
-    df =converter.convert_position_to_csv(str(csv_file), str(out_file))
+    # df =converter.convert_position_to_csv(str(csv_file), str(out_file))
 
     # except Exception as e:
     #     print(f"Error converting {csv_file.name}: {str(e)}")

@@ -241,9 +241,9 @@ def segment_expmap_csv(motion_df , wrist_joints , ankle_joints):
 
         selected_df = motion_df[columns]
         rot_vec = selected_df.to_numpy() # 3 values of joint_name
-        # joint_speed = calculate_joint_angular_speed(rot_vec)
-        joint_speed = calculate_joint_linear_speed(rot_vec) # add this line for 3d position coordinate instead of exp map
-        print("now using position data instead of exp map")
+        joint_speed = calculate_joint_angular_speed(rot_vec)
+        # joint_speed = calculate_joint_linear_speed(rot_vec) # add this line for 3d position coordinate instead of exp map
+        print("now using exp map data instead of exp map")
         joint_speeds += joint_speed
 
     min_boundary_distance = 1 #1 second for now
