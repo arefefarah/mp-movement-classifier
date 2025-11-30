@@ -9,7 +9,7 @@ from TMP_model import MP_model
 from mp_movement_classifier.utils.utils import (
     load_model_with_full_state,
     process_bvh_data,
-    process_exp_map_data,
+    process_motion_data,
     read_bvh_files,
     save_model_with_full_state,
     segment_motion_trajectories,
@@ -23,7 +23,7 @@ from mp_movement_classifier.utils.plotting import (
 )
 from mp_movement_classifier.utils import config
 
-DEFAULT_DATA_DIR = "../../data/position_csv_files"
+DEFAULT_DATA_DIR = "../../data/quat_csv_files_filter_wxyz"
 DEFAULT_TAIL_WINDOW = 50
 MODEL_NAME_SUFFIX: Optional[str] = None
 
@@ -47,7 +47,7 @@ def prepare_save_paths(num_mps: int, cutoff_freq: float, num_t_points: int, mode
     """
     # Organize outputs under a dedicated directory
     # model_dir = os.path.join(config.SAVING_DIR, f"mp_model_{num_mps}_cutoff_{cutoff_freq}_tpoints_{num_t_points}")
-    model_dir = os.path.join(config.SAVING_DIR, f"position_mp_model_{num_mps}")
+    model_dir = os.path.join(config.SAVING_DIR, f"quaternian_mp_model_{num_mps}")
     os.makedirs(model_dir, exist_ok=True)
 
     model_name = f"mp_model_{num_mps}_PC_tpoints_{num_t_points}"
@@ -174,7 +174,7 @@ def main() -> None:
     tail_window = DEFAULT_TAIL_WINDOW
     model_name_suffix = MODEL_NAME_SUFFIX
 
-    motion_ids, processed_segments, segment_motion_ids = process_exp_map_data(folder_path=data_dir)
+    motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=data_dir)
 
     # Load BVH data
     # print(f"Reading BVH files from: {data_dir}")

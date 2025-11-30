@@ -85,7 +85,6 @@ class H36MConverter:
 
         df = pd.DataFrame(channels, columns=columns)
 
-        # ========== ADD THIS CODE BLOCK ==========
         # Remove quaternion jumps starting from the second row
 
         for row_idx in range(1, len(df)):
@@ -121,9 +120,6 @@ class H36MConverter:
                 df.loc[row_idx, x_col] = q_corrected[1]
                 df.loc[row_idx, y_col] = q_corrected[2]
                 df.loc[row_idx, z_col] = q_corrected[3]
-
-        # ========== END OF NEW CODE ==========
-
 
         df.to_csv(output_path, index=False)
         print(f"file saved to {output_path}")

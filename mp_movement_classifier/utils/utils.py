@@ -128,6 +128,83 @@ def get_joint_channel_mapping():
 
     return joint_mapping
 
+
+import numpy as np
+
+
+def quaternion_conjugate(q):
+    """
+    Compute quaternion conjugate
+
+    Args:
+        q: quaternion [w, x, y, z] or array of quaternions [N, 4]
+
+    Returns:
+        q*: conjugate [w, -x, -y, -z]
+    """
+    q_conj = q.copy()
+    q_conj[..., 1:] *= -1  # Negate x, y, z components
+    return q_conj
+
+
+def quaternion_multiply(q1, q2):
+    """
+    Multiply two quaternions: q1 × q2
+
+    Args:
+        q1, q2: quaternions [w, x, y, z] or arrays [N, 4]
+
+    Returns:
+        q_result: product quaternion(s)
+    """
+    w1, x1, y1, z1 = q1[..., 0], q1[..., 1], q1[..., 2], q1[..., 3]
+    w2, x2, y2, z2 = q2[..., 0], q2[..., 1], q2[..., 2], q2[..., 3]
+
+    w = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+    x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
+    y = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
+    z = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
+
+    return np.stack([w, x, y, z], axis=-1)
+
+
+def calculate_angular_velocity_quat(quaternions, frame_rate=30):
+    """
+    Calculate angular velocity directly from quaternions
+
+    Mathematical formula:
+    ω = (2/Δt) × vector_part(q₂ × q₁*)
+
+    Args:
+        quaternions: [num_frames, 4] array of quaternions (w, x, y, z)
+        frame_rate: frames per second (Hz)
+
+    Returns:
+        angular_velocities: [num_frames-1, 3] array of angular velocity vectors
+        angular_speeds: [num_frames-1] array of angular speed magnitudes
+    """
+    dt = 1.0 / frame_rate
+    num_frames = quaternions.shape[0]
+
+    # Get consecutive quaternion pairs
+    q1 = quaternions[:-1]  # [N-1, 4]
+    q2 = quaternions[1:]  # [N-1, 4]
+
+    # Compute conjugate of q1
+    q1_conj = quaternion_conjugate(q1)
+
+    # Compute q2 × q1*
+    q_diff = quaternion_multiply(q2, q1_conj)
+
+    # Extract vector part (x, y, z) and scale
+    angular_velocities = (2.0 / dt) * q_diff[:, 1:]  # [N-1, 3]
+
+    # Compute angular speeds (magnitudes)
+    angular_speeds = np.linalg.norm(angular_velocities, axis=1)
+
+    return angular_velocities, angular_speeds
+
+
 def calculate_joint_angular_speed(rotation_vectors, frame_rate=30):
     """
     Calculate angular speed from rotation vectors (exponential maps)
@@ -179,7 +256,7 @@ def calculate_joint_linear_speed(positions, frame_rate=30):
 
     return linear_speeds
 
-def process_exp_map_data(folder_path):
+def process_motion_data(folder_path):
     """
     Apply Butterworth filter and segmentation to BVH motion data
     """
@@ -206,7 +283,7 @@ def process_exp_map_data(folder_path):
                 motion_data.append(motion_array)
 
                 # Apply temporal segmentation
-                segments, boundaries = segment_expmap_csv(
+                segments, boundaries = segment_motion_csv(
                     motion_df,
                     wrist_joints=['LWrist', 'RWrist'],
                     ankle_joints=['LAnkle', 'RAnkle']
@@ -232,18 +309,18 @@ def process_exp_map_data(folder_path):
 
     return motion_ids,processed_segments, segment_motion_ids
 
-def segment_expmap_csv(motion_df , wrist_joints , ankle_joints):
+def segment_motion_csv(motion_df , wrist_joints , ankle_joints):
 
-    # motion_df = pd.read_csv(csv_file_path)
     joint_speeds=0
     for joint_name in wrist_joints + ankle_joints:
         columns = [col for col in motion_df.columns if col.startswith(joint_name)]
 
         selected_df = motion_df[columns]
-        rot_vec = selected_df.to_numpy() # 3 values of joint_name
-        joint_speed = calculate_joint_angular_speed(rot_vec)
-        # joint_speed = calculate_joint_linear_speed(rot_vec) # add this line for 3d position coordinate instead of exp map
-        print("now using exp map data instead of exp map")
+        vec = selected_df.to_numpy() # 3 values of joint_name
+        # choose the method of speed calculation based on representation
+        # joint_speed = calculate_joint_angular_speed(vec) # for exp maps
+        # joint_speed = calculate_joint_linear_speed(vec) # for 3d position coordinate instead
+        _, joint_speed = calculate_angular_velocity_quat(vec) ## for quaternian representation
         joint_speeds += joint_speed
 
     min_boundary_distance = 1 #1 second for now

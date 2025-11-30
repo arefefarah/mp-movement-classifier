@@ -20,7 +20,7 @@ from pathlib import Path
 from mp_movement_classifier.utils import config
 from mp_movement_classifier.utils.utils import (
     load_model_with_full_state,
-    process_exp_map_data,
+    process_motion_data,
     process_bvh_data,
     read_bvh_files,
     save_model_with_full_state,
@@ -200,7 +200,6 @@ def plot_coefficient_distributions(coefficients, motion_ids,
         save_path = Path(save_dir) / f'motion_{motion_id}_coefficients.png'
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         figures[motion_id] = fig
-        # plt.show()
 
     return figures
 
@@ -213,7 +212,7 @@ def prepare_coefficient_data(coefficients, motion_ids):
 
 
 def visualize_with_pca(X, y, out_dir):
-    pca = PCA(n_components=2)
+    pca = PCA(n_components=50)
     X_pca = pca.fit_transform(X)
 
     plt.figure(figsize=(10, 8))
@@ -236,7 +235,38 @@ def visualize_with_pca(X, y, out_dir):
     out_path = Path(out_dir) / 'pca_visualization.png'
     plt.savefig(out_path, dpi=150)
 
-    plt.show()
+    #plot variance explained
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+
+    # Individual variance
+    n_components = min(40, len(pca.explained_variance_ratio_))
+    ax1.bar(range(1, n_components + 1),
+            pca.explained_variance_ratio_[:n_components],
+            alpha=0.7, edgecolor='black')
+    ax1.set_xlabel('Principal Component', fontsize=12, fontweight='bold')
+    ax1.set_ylabel('Explained Variance Ratio', fontsize=12, fontweight='bold')
+    ax1.set_title('Variance Explained by Each PC', fontsize=12, fontweight='bold')
+    ax1.grid(True, alpha=0.3)
+
+    # Cumulative variance
+    cumsum = np.cumsum(pca.explained_variance_ratio_[:n_components])
+    ax2.plot(range(1, n_components + 1), cumsum,
+             marker='o', linewidth=2, markersize=5)
+    ax2.axhline(y=0.8, color='r', linestyle='--',
+                label='80% variance', linewidth=2)
+    ax2.axhline(y=0.9, color='g', linestyle='--',
+                label='90% variance', linewidth=2)
+    ax2.set_xlabel('Number of Components', fontsize=12, fontweight='bold')
+    ax2.set_ylabel('Cumulative Explained Variance', fontsize=12, fontweight='bold')
+    ax2.set_title('Cumulative Variance Explained', fontsize=12, fontweight='bold')
+    ax2.grid(True, alpha=0.3)
+    ax2.legend()
+
+    plt.tight_layout()
+    out_path = Path(out_dir) / 'pca_variance_explained.png'
+    plt.savefig(out_path, dpi=150)
+
 
     return pca
 
@@ -269,7 +299,6 @@ def visualize_with_tsne(X, y, out_dir):
     plt.tight_layout()
     out_path = Path(out_dir) / 'tsne_visualization.png'
     plt.savefig(out_path, dpi=150)
-    plt.show()
 
     return tsne
 
@@ -307,7 +336,6 @@ def classify_motion_types(X, y, out_dir):
     plt.tight_layout()
     out_path = Path(out_dir) / 'confusion_matrix.png'
     plt.savefig(out_path, dpi=150)
-    plt.show()
 
     return classifier, accuracy
 
@@ -333,7 +361,6 @@ def visualize_feature_importance(classifier, X, y, out_dir):
         plt.tight_layout()
         out_path = Path(out_dir) / 'feature_importance.png'
         plt.savefig(out_path, dpi=150)
-        plt.show()
 
         # Plot top 20 most important features
         indices = np.argsort(importances)[-20:]
@@ -345,7 +372,6 @@ def visualize_feature_importance(classifier, X, y, out_dir):
         plt.tight_layout()
         out_path = Path(out_dir) / 'top_features.png'
         plt.savefig(out_path, dpi=150)
-        plt.show()
 
 
 def analyze_first_degree_coefficients(coefficients, motion_ids, save_dir):
@@ -478,7 +504,6 @@ def _plot_pca_2d(results, save_dir):
     plt.tight_layout()
     plt.savefig(save_dir / 'pca_2d_motion_separation.png',
                 dpi=300, bbox_inches='tight')
-    plt.show()
 
     print(f"Saved: {save_dir / 'pca_2d_motion_separation.png'}")
 
@@ -525,7 +550,6 @@ def _plot_pca_3d(results, save_dir):
     plt.tight_layout()
     plt.savefig(save_dir / 'pca_3d_motion_separation.png',
                 dpi=300, bbox_inches='tight')
-    plt.show()
 
     print(f"Saved: {save_dir / 'pca_3d_motion_separation.png'}")
 
@@ -563,7 +587,6 @@ def _plot_variance_explained(results, save_dir):
     plt.tight_layout()
     plt.savefig(save_dir / 'pca_variance_explained.png',
                 dpi=300, bbox_inches='tight')
-    plt.show()
 
     print(f"Saved: {save_dir / 'pca_variance_explained.png'}")
 
@@ -599,7 +622,6 @@ def _plot_feature_importance(results, save_dir):
     plt.tight_layout()
     plt.savefig(save_dir / 'pca_feature_loadings.png',
                 dpi=300, bbox_inches='tight')
-    plt.show()
 
     print(f"Saved: {save_dir / 'pca_feature_loadings.png'}")
 
@@ -645,21 +667,20 @@ def _plot_distance_matrix(results, save_dir):
     plt.tight_layout()
     plt.savefig(save_dir / 'pca_distance_matrix.png',
                 dpi=300, bbox_inches='tight')
-    plt.show()
+
 
     print(f"Saved: {save_dir / 'pca_distance_matrix.png'}")
 
 
 def main():
 
-    num_MPs = 5
-    model_dir = os.path.join("../results/tmp_configs", f"position_mp_model_{num_MPs}")
+    num_MPs = 20
+    model_dir = os.path.join("./../../results/tmp_configs", f"quaternian_mp_model_{num_MPs}")
     out_dir = os.path.join(model_dir, "legandre_analysis")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    folder_path = "../data/position_csv_files"
-    # folder_path = "../data/expmap_csv_files"
-    motion_ids, processed_segments, segment_motion_ids = process_exp_map_data(folder_path=folder_path)
+    folder_path = "./../../data/quat_csv_files_filter_wxyz"
+    motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=folder_path)
 
 
     max_degree = 5  # for polynomial degrees as basis function , For 10 degrees (0 to 9)

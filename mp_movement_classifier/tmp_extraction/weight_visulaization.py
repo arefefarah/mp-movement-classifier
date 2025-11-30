@@ -22,7 +22,7 @@ import json
 import argparse
 import sys
 
-from mp_movement_classifier.utils.utils import read_bvh_files, process_bvh_data,process_exp_map_data
+from mp_movement_classifier.utils.utils import read_bvh_files, process_bvh_data,process_motion_data
 
 JOINT_NAMES = [
     'Hip', 'RHip', 'RKnee', 'RAnkle', 'LHip', 'LKnee', 'LAnkle',
@@ -30,23 +30,15 @@ JOINT_NAMES = [
     'LShoulder', 'LElbow', 'LWrist', 'RShoulder', 'RElbow', 'RWrist'
 ]
 
-# CHANNEL_NAMES = []
-# # Hip has 6 channels (position + rotation)
-# CHANNEL_NAMES.extend([f'{JOINT_NAMES[0]}_Xpos', f'{JOINT_NAMES[0]}_Ypos', f'{JOINT_NAMES[0]}_Zpos',
-#                       f'{JOINT_NAMES[0]}_Zrot', f'{JOINT_NAMES[0]}_Xrot', f'{JOINT_NAMES[0]}_Yrot'])
-# # All other joints have 3 channels (Zrotation, Xrotation, Yrotation)
-# for joint in JOINT_NAMES[1:]:
-#     CHANNEL_NAMES.extend([f'{joint}_Zrot', f'{joint}_Xrot', f'{joint}_Yrot'])
-# CHANNEL_NAMES = CHANNEL_NAMES[3:]
-# print(len(CHANNEL_NAMES))
 
+COORD_NAMES = ['W','X', 'Y', 'Z']
 CHANNEL_NAMES = []
 for joint in JOINT_NAMES:
-    CHANNEL_NAMES.extend([f'{joint}_X', f'{joint}_Y', f'{joint}_Z'])
+    if joint=='Hip':
+        CHANNEL_NAMES.extend([f'{joint}_Xpos', f'{joint}_Ypos', f'{joint}_Zpos'])
+    for coord in COORD_NAMES:
+        CHANNEL_NAMES.extend([f'{joint}_{coord}'])
 
-print(len(CHANNEL_NAMES))
-
-COORD_NAMES = ['X', 'Y', 'Z']
 DEFAULT_MODEL_DIR = "../../results/tmp_configs"
 DEFAULT_DATA_DIR = "../../data/filtered_bvh_files"
 DEFAULT_MOTION_MAPPING = "../../data/motion_mapping.json"
@@ -364,9 +356,45 @@ def analyze_joint_coord_variance(weights, motion_ids, motion_names_dict=None, co
     return avg_joint_variances, std_joint_variances, f_stat, p_value
 
 
-# ============================================================================
-# MAIN EXECUTION
-# ============================================================================
+def vis_median_weights_movements(weights, motion_ids, motion_names_dict=None,save_dir='./plots'):
+
+    Path(save_dir).mkdir(parents=True, exist_ok=True)
+
+    num_segments, num_joints_coord, num_MPs = weights.shape
+
+    unique_motions = np.unique(motion_ids)
+
+    if motion_names_dict:
+        motion_labels = [motion_names_dict.get(m, f'Motion {m}') for m in unique_motions]
+    else:
+        motion_labels = [f'Motion {m}' for m in unique_motions]
+
+    # For each MP, show comparison across joints and movements
+    for mp_idx in range(min(num_MPs, 10)):  # Show first 10 MPs
+        n_motions = len(unique_motions)
+
+        for i, motion_id in enumerate(unique_motions):
+            mask = motion_ids == motion_id
+            motion_weights = weights[mask, :, mp_idx]  # [n_segments, num_joints_coord]
+
+            med_weights = np.median(motion_weights, axis=0)
+
+            plt.figure(figsize=(10, 6))
+            plt.bar(CHANNEL_NAMES, med_weights,
+                   width=0.5 ,  capsize=3,
+                   color='steelblue', alpha=0.7)
+            plt.ylabel(f'Median Weight ',fontsize=10)
+            plt.xticks(rotation=45, ha='right',fontsize=6)  # 'ha' for horizontal alignment
+            plt.xlabel('Channels')
+            plt.title(f'MP {mp_idx + 1}  Weights for {motion_labels[i]}\n({mask.sum()} segments)',
+                      fontsize=12, y=1.02)
+            plt.tight_layout()
+            plt.savefig(f'{save_dir}/mp_{mp_idx + 1:02d}_{motion_id}_weights.png', dpi=150, bbox_inches='tight')
+            plt.close()
+
+    print(f"✓ Saved {min(num_MPs, 10)} MP comparison plots to {save_dir}")
+
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -391,9 +419,8 @@ def main():
     motion_id_to_name = load_motion_mapping(DEFAULT_MOTION_MAPPING)
 
     # model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"pos_filtered_mp_model_20_cutoff_3_tpoints_30")
-    model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"position_mp_model_5")
-    # model_name = "mp_model_20_PC_init_cutoff_3_tpoints_30"
-    model_name = "mp_model_5_PC_tpoints_30"
+    model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"quaternian_mp_model_20")
+    model_name = "mp_model_20_PC_tpoints_30"
 
     model_path = os.path.join(model_subdir,model_name)
 
@@ -407,16 +434,18 @@ def main():
     weights = np.stack(weights_list, axis=0)
 
     args.bvh_dir = DEFAULT_DATA_DIR
-    # segment_motion_ids = load_segment_motion_ids(args.bvh_dir, args.cutoff_freq)
-    folder_path = "../../data/position_csv_files"
-    motion_ids, processed_segments, segment_motion_ids = process_exp_map_data(folder_path=folder_path)
+    folder_path = "../../data/quat_csv_files_filter_wxyz"
+    motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=folder_path)
 
     # Run analyses
     print(f"\n{'=' * 70}")
     print("MP Weights Across Movements".center(70))
     print(f"{'=' * 70}")
     output_dir = os.path.join(model_subdir,"weights_analysis")
-    compare_weights_across_movements(weights, segment_motion_ids,motion_id_to_name,
+    # compare_weights_across_movements(weights, segment_motion_ids,motion_id_to_name,
+    #                                  output_dir)
+    output_dir = os.path.join(output_dir, "median_weights")
+    vis_median_weights_movements(weights, segment_motion_ids,motion_id_to_name,
                                      output_dir)
 
     # print(f"\n{'=' * 70}")

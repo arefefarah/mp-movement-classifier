@@ -30,7 +30,7 @@ import seaborn as sns  # noqa: E402
 
 from mp_movement_classifier.utils.utils import (
     load_model_with_full_state,
-    process_exp_map_data,
+    process_motion_data,
     process_bvh_data,
     read_bvh_files,
     save_model_with_full_state,
@@ -467,13 +467,13 @@ def analyze_feature_pca(
 def main():
     global data_dir, model_path
 
-    num_MPs = 10
+    num_MPs = 20
     cutoff_freq = 3.0
     tpoints = 30
     model_name = f"mp_model_{num_MPs}_cutoff_{cutoff_freq}"
     # model_dir = os.path.join(config.SAVING_DIR, f"mp_model_{num_MPs}_cutoff_{cutoff_freq}_tpoints_{tpoints}")
     # model_dir = os.path.join(config.SAVING_DIR, f"pos_filtered_mp_model_20_cutoff_3_tpoints_30")
-    model_dir = os.path.join(config.SAVING_DIR, f"position_mp_model_{num_MPs}")
+    model_dir = os.path.join(config.SAVING_DIR, f"quaternian_mp_model_{num_MPs}")
     model_file = os.path.join(model_dir, f"mp_model_{num_MPs}_PC_tpoints_30")
 
     # model_file = os.path.join(model_dir, f"mp_model_{num_MPs}_PC_init_cutoff_{cutoff_freq}_tpoints_{tpoints}")
@@ -482,7 +482,7 @@ def main():
     out_dir = os.path.join(model_dir, "classification")
     model_path = model_file
 
-    folder_path = "../../data/position_csv_files"
+    folder_path = "../../data/quat_csv_files_filter_wxyz"
     # bvh_data, motion_ids = read_bvh_files(folder_path)
     #
     # # Process data according to paper specifications
@@ -492,7 +492,7 @@ def main():
     #     cutoff_freq= cutoff_freq,
     # )
 
-    motion_ids, processed_segments, segment_motion_ids = process_exp_map_data(folder_path=folder_path)
+    motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=folder_path)
 
     # based on TMP code: the format of data=list(segment_data[signals,time])
     num_segments = len(processed_segments)

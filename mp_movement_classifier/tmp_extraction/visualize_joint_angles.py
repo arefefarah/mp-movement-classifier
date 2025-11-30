@@ -19,7 +19,7 @@ from matplotlib.animation import FuncAnimation
 #     visualize_segment_comparison,
 # )
 
-from mp_movement_classifier.utils.utils import H36M_KEYPOINT_NAMES, SKELETON_CONNECTIONS
+from mp_movement_classifier.utils.utils import calculate_angular_velocity_quat
 from mp_movement_classifier.utils import config
 
 
@@ -336,7 +336,7 @@ def set_axes_equal(ax):
 
 
 
-def segment_expmap_csv(file_name,csv_file_path, wrist_joints , ankle_joints):
+def segment_motion_csv(file_name,csv_file_path, wrist_joints , ankle_joints):
 
     motion_df = pd.read_csv(csv_file_path)
     joint_speeds=0
@@ -344,8 +344,9 @@ def segment_expmap_csv(file_name,csv_file_path, wrist_joints , ankle_joints):
         columns = [col for col in motion_df.columns if col.startswith(joint_name)]
 
         selected_df = motion_df[columns]
-        rot_vec = selected_df.to_numpy() # 3 values of joint_name
-        joint_speed = calculate_joint_angular_speed(rot_vec)
+        vec = selected_df.to_numpy() #  values of joint_name
+        # joint_speed = calculate_joint_angular_speed(vec)
+        _,joint_speed = calculate_angular_velocity_quat(vec)
         joint_speeds += joint_speed
 
     min_boundary_distance = 1 #1 second for now
@@ -416,11 +417,11 @@ def segment_expmap_csv(file_name,csv_file_path, wrist_joints , ankle_joints):
 
     plt.tight_layout()
 
-    figures_dir = os.path.join("./../../results", 'exp_map_segments_unfiltered')
-    os.makedirs(figures_dir, exist_ok=True)
-    model_dir = os.path.join("./../../results/tmp_configs", f"expmap_mp_model_20")
+
+    model_dir = os.path.join("./../../results/tmp_configs", f"quaternian_mp_model_20")
     figures_dir = os.path.join(model_dir, "motion_segmentation")
-    plt.savefig(os.path.join(figures_dir, f"{file_name}_joint_trajectories_segmentation.png"),
+    os.makedirs(figures_dir, exist_ok=True)
+    plt.savefig(os.path.join(figures_dir, f"{file_name}_without_jumps.png"),
                 dpi=300, bbox_inches='tight')
     plt.close()
 
@@ -458,9 +459,10 @@ def visualize_quat_csv(file_name,csv_file_path, wrist_joints , ankle_joints):
         columns = [col for col in motion_df.columns if col.startswith(joint_name)]
 
         selected_df = motion_df[columns]
-        rot_vec = selected_df.to_numpy() # 3 values of joint_name
-        # joint_speed = calculate_joint_angular_speed(rot_vec)
-        # joint_speeds += joint_speed
+        vec = selected_df.to_numpy() # 3 values of joint_name
+        # joint_speed = calculate_joint_angular_speed(vec)
+        _, joint_speed = calculate_angular_velocity_quat(vec)
+        joint_speeds += joint_speed
 
     min_boundary_distance = 1 #1 second for now
     frame_rate = 30
@@ -507,11 +509,11 @@ def visualize_quat_csv(file_name,csv_file_path, wrist_joints , ankle_joints):
 
     plt.tight_layout()
 
-    figures_dir = os.path.join("./../../results", 'quat_rep_visualization')
+    # figures_dir = os.path.join("./../../results", 'quat_rep_visualization')
+    model_dir = os.path.join("./../../results/tmp_configs", f"quaternian_mp_model_20")
+    figures_dir = os.path.join(model_dir, "motion_segmentation")
     os.makedirs(figures_dir, exist_ok=True)
-    # model_dir = os.path.join("./../../results/tmp_configs", f"expmap_mp_model_20")
-    # figures_dir = os.path.join(model_dir, "motion_segmentation")
-    plt.savefig(os.path.join(figures_dir, f"{file_name}_without_jumps_allcomponents.png"),
+    plt.savefig(os.path.join(figures_dir, f"{file_name}_without_jumps.png"),
                 dpi=300, bbox_inches='tight')
     plt.close()
 
@@ -520,18 +522,15 @@ def visualize_quat_csv(file_name,csv_file_path, wrist_joints , ankle_joints):
 def main():
 
     # Configuration
-    filename = "subject_10_motion_05"
-    bvh_file = f"../../data/expmap_bvh_files/{filename}.bvh"
-    csv_file_path = f"../../data/expmap_csv_files_unfiltered/{filename}.csv"
-    csv_file_path = f"../../data/quat_csv_files_withoutjumps_allcomponents/{filename}.csv"
+    filename = "subject_12_motion_10"
+    # bvh_file = f"../../data/expmap_bvh_files/{filename}.bvh"
+    csv_file_path = f"../../data/quat_csv_files_filter_wxyz/{filename}.csv"
 
-    # joints, motion_data, frame_time, frames = parse_bvh_robust(bvh_file)
-    # print("updated nume of joints: ", len(joints))
 
-    # segments,boundaries = segment_expmap_csv(filename,csv_file_path,wrist_joints=['LWrist', 'RWrist'],
-    #                                          ankle_joints=['LAnkle', 'RAnkle'])
-    visualize_quat_csv(filename, csv_file_path, wrist_joints=['LWrist', 'RWrist'],
-                       ankle_joints=['LAnkle', 'RAnkle'])
+    segments,boundaries = segment_motion_csv(filename,csv_file_path,wrist_joints=['LWrist', 'RWrist'],
+                                             ankle_joints=['LAnkle', 'RAnkle'])
+    # visualize_quat_csv(filename, csv_file_path, wrist_joints=['LWrist', 'RWrist'],
+    #                    ankle_joints=['LAnkle', 'RAnkle'])
 
 
 if __name__ == "__main__":
