@@ -256,7 +256,7 @@ def calculate_joint_linear_speed(positions, frame_rate=30):
 
     return linear_speeds
 
-def process_motion_data(folder_path):
+def process_motion_data(folder_path,data_type):
     """
     Apply Butterworth filter and segmentation to BVH motion data
     """
@@ -278,18 +278,19 @@ def process_motion_data(folder_path):
             with open(file_path, 'r', encoding='utf-8') as f:
                 motion_ids.append(motion_id)
                 print(f"Processing {file_path} with motion ID {motion_id}")
-                motion_df = pd.read_csv(file_path)
-                motion_array = motion_df.to_numpy()
-                motion_data.append(motion_array)
+
+                # motion_array = motion_df.to_numpy()
+                # motion_data.append(motion_array)
 
                 # Apply temporal segmentation
                 segments, boundaries = segment_motion_csv(
-                    motion_df,
+                    file_path,
+                    data_type=data_type,
                     wrist_joints=['LWrist', 'RWrist'],
                     ankle_joints=['LAnkle', 'RAnkle']
                 )
 
-                print(f"   ✅ Found {len(segments)} motion segments")
+                # print(f"   ✅ Found {len(segments)} motion segments")
                 min_segment_length = 10
                 for segment in segments:
                     if segment.shape[0] >= min_segment_length:
@@ -309,26 +310,29 @@ def process_motion_data(folder_path):
 
     return motion_ids,processed_segments, segment_motion_ids
 
-def segment_motion_csv(motion_df , wrist_joints , ankle_joints):
-
+def segment_motion_csv(file_path , data_type, wrist_joints , ankle_joints):
+    motion_df = pd.read_csv(file_path)
     joint_speeds=0
     for joint_name in wrist_joints + ankle_joints:
         columns = [col for col in motion_df.columns if col.startswith(joint_name)]
 
         selected_df = motion_df[columns]
-        vec = selected_df.to_numpy() # 3 values of joint_name
-        # choose the method of speed calculation based on representation
-        # joint_speed = calculate_joint_angular_speed(vec) # for exp maps
-        # joint_speed = calculate_joint_linear_speed(vec) # for 3d position coordinate instead
-        _, joint_speed = calculate_angular_velocity_quat(vec) ## for quaternian representation
+        vec = selected_df.to_numpy()
+        if data_type=="exp":
+            joint_speed = calculate_joint_angular_speed(vec) # for exp maps
+        elif data_type=="position":
+            joint_speed = calculate_joint_linear_speed(vec) # for 3d position coordinate
+        elif data_type=="quaternian":
+            _, joint_speed = calculate_angular_velocity_quat(vec) ## for quaternian representation
+        else  :
+            raise ValueError("data_type must be exp,position or quaternian")
+
         joint_speeds += joint_speed
 
     min_boundary_distance = 1 #1 second for now
     frame_rate = 30
     frame_time = 1 / frame_rate
     min_frames = int(min_boundary_distance *frame_rate)
-    # min_frames = 30  # i manually change it to 6 instead of 4
-    print(f"Minimum distance in frames: {min_frames}")
     peaks, _ = find_peaks(-joint_speeds, distance=min_frames)
     boundary_frames = [0] + list(peaks) + [len(joint_speeds) - 1]
     boundary_frames.sort()
@@ -627,7 +631,7 @@ def process_bvh_data(data_dir, motion_ids, cutoff_freq=6.0):
 
     for file, motion_id in zip(bvh_files, motion_ids):
         file_dir = os.path.join(data_dir, file)
-        print(f"Processing {file_dir} with motion ID {motion_id}")
+        # print(f"Processing {file_dir} with motion ID {motion_id}")
         joints, motion_data, frame_time, frames = parse_bvh_robust(file_dir)
 
         # Apply Butterworth filter

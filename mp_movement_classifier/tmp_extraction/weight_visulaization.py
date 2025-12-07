@@ -435,7 +435,7 @@ def main():
 
     args.bvh_dir = DEFAULT_DATA_DIR
     folder_path = "../../data/quat_csv_files_filter_wxyz"
-    motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=folder_path)
+    motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=folder_path,data_type="quaternian")
 
     # Run analyses
     print(f"\n{'=' * 70}")

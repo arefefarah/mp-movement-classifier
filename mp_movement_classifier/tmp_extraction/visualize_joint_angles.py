@@ -13,13 +13,7 @@ from scipy.signal import find_peaks
 import warnings
 from matplotlib.animation import FuncAnimation
 
-# Import animation functions
-# from motion_segment_animator import (
-#     create_all_segment_animations,
-#     visualize_segment_comparison,
-# )
-
-from mp_movement_classifier.utils.utils import calculate_angular_velocity_quat
+from mp_movement_classifier.utils.utils import calculate_angular_velocity_quat,segment_motion_csv
 from mp_movement_classifier.utils import config
 
 
@@ -335,34 +329,17 @@ def set_axes_equal(ax):
     ax.set_zlim3d([mid_z - max_range/2, mid_z + max_range/2])
 
 
-
-def segment_motion_csv(file_name,csv_file_path, wrist_joints , ankle_joints):
+def visualize_motion_with_segmentation(file_name,csv_file_path, wrist_joints , ankle_joints):
 
     motion_df = pd.read_csv(csv_file_path)
-    joint_speeds=0
-    for joint_name in wrist_joints + ankle_joints:
-        columns = [col for col in motion_df.columns if col.startswith(joint_name)]
-
-        selected_df = motion_df[columns]
-        vec = selected_df.to_numpy() #  values of joint_name
-        # joint_speed = calculate_joint_angular_speed(vec)
-        _,joint_speed = calculate_angular_velocity_quat(vec)
-        joint_speeds += joint_speed
-
-    min_boundary_distance = 1 #1 second for now
     frame_rate = 30
     frame_time = 1 / frame_rate
-    min_frames = int(min_boundary_distance *frame_rate)
-    # min_frames = 30  # i manually change it to 6 instead of 4
-    print(f"Minimum distance in frames: {min_frames}")
-    peaks, _ = find_peaks(-joint_speeds, distance=min_frames)
-    boundary_frames = [0] + list(peaks) + [len(joint_speeds) - 1]
-    # print(f"boundary_frames: {boundary_frames}")
-    boundary_frames.sort()
-
-    boundaries = [boundary_frames[i:i + 2] for i in range(len(boundary_frames) - 1)]
-    segments = [motion_df.iloc[boundary[0]:boundary[1], :] for boundary in boundaries]
+    segments, boundaries = segment_motion_csv(csv_file_path, data_type= "quaternian",
+                                              wrist_joints = wrist_joints,
+                                              ankle_joints = ankle_joints)
     print(f"len of segments: {len(segments)}")
+    boundary_frames = [boundaries[0][0]] + [b[1] for b in boundaries]
+
 
     # # Create time vector
     time_vector = np.arange(motion_df.shape[0]) * frame_time
@@ -398,7 +375,8 @@ def segment_motion_csv(file_name,csv_file_path, wrist_joints , ankle_joints):
 
         # Plot segment boundaries
         for boundary in boundary_frames[1:-1]:  # Exclude first and last
-            ax.axvline(x=time_vector[boundary], color='r', linestyle='--', alpha=0.7)
+            # ax.axvline(x=time_vector[boundary], color='r', linestyle='--', alpha=0.7)
+            ax.axvline(x=time_vector[int(boundary)], color='r', linestyle='--', alpha=0.7)
 
         # Highlight segments with different colors
         segment_colors = plt.cm.viridis(np.linspace(0, 1, len(segments)))
@@ -451,87 +429,20 @@ def calculate_joint_angular_speed(rotation_vectors, frame_rate=30):
 
     return angular_speeds
 
-def visualize_quat_csv(file_name,csv_file_path, wrist_joints , ankle_joints):
-
-    motion_df = pd.read_csv(csv_file_path)
-    joint_speeds=0
-    for joint_name in wrist_joints + ankle_joints:
-        columns = [col for col in motion_df.columns if col.startswith(joint_name)]
-
-        selected_df = motion_df[columns]
-        vec = selected_df.to_numpy() # 3 values of joint_name
-        # joint_speed = calculate_joint_angular_speed(vec)
-        _, joint_speed = calculate_angular_velocity_quat(vec)
-        joint_speeds += joint_speed
-
-    min_boundary_distance = 1 #1 second for now
-    frame_rate = 30
-    frame_time = 1 / frame_rate
-
-    # # Create time vector
-    time_vector = np.arange(motion_df.shape[0]) * frame_time
-
-    target_joints=["LWrist","LKnee","LElbow","LAnkle","Head","LShoulder"]
-
-    # Create plots
-    fig, axes = plt.subplots(len(target_joints), 1, figsize=(16, 5 * len(target_joints)))
-    if len(target_joints) == 1:
-        axes = [axes]
-
-    # Color palette
-    colors = ['red', 'green', 'blue', 'orange', 'purple', 'brown']
-
-    # Iterate through target joints
-    for i, joint_name in enumerate(target_joints):
-        columns = [col for col in motion_df.columns if col.startswith(joint_name)]
-        axis_angle_rep = motion_df[columns]
-        print(f"axis_angle_rep shape: {axis_angle_rep.shape}")
-
-        ax = axes[i]
-        ax.set_title(f'{joint_name} Joint rep with Motion Segments',
-                     fontsize=16, fontweight='bold')
-
-        # Plot each rotation channel
-        for idx,column in enumerate(columns):
-            color = colors[idx % len(colors)]
-            ax.plot(time_vector,motion_df[column],
-                    color=color,
-                    label=f'{column}',
-                    linewidth=1.5,
-                    alpha=0.7)
-
-
-        ax.set_xlabel('Time (seconds)', fontsize=12)
-        ax.set_ylabel('Angle (degrees)', fontsize=12)
-        ax.legend(fontsize=10, loc='upper right')
-        ax.grid(True, alpha=0.3)
-        ax.set_xlim(0, time_vector[-1])
-
-    plt.tight_layout()
-
-    # figures_dir = os.path.join("./../../results", 'quat_rep_visualization')
-    model_dir = os.path.join("./../../results/tmp_configs", f"quaternian_mp_model_20")
-    figures_dir = os.path.join(model_dir, "motion_segmentation")
-    os.makedirs(figures_dir, exist_ok=True)
-    plt.savefig(os.path.join(figures_dir, f"{file_name}_without_jumps.png"),
-                dpi=300, bbox_inches='tight')
-    plt.close()
-
-    # return segments,boundaries
-
 def main():
 
-    # Configuration
-    filename = "subject_12_motion_10"
-    # bvh_file = f"../../data/expmap_bvh_files/{filename}.bvh"
-    csv_file_path = f"../../data/quat_csv_files_filter_wxyz/{filename}.csv"
-
-
-    segments,boundaries = segment_motion_csv(filename,csv_file_path,wrist_joints=['LWrist', 'RWrist'],
-                                             ankle_joints=['LAnkle', 'RAnkle'])
-    # visualize_quat_csv(filename, csv_file_path, wrist_joints=['LWrist', 'RWrist'],
-    #                    ankle_joints=['LAnkle', 'RAnkle'])
-
+    for i in range(9):
+        filename = f"subject_2_motion_0{i}"
+        csv_file_path = f"../../data/quat_csv_files_filter_wxyz/{filename}.csv"
+        segments,boundaries = visualize_motion_with_segmentation(filename,
+                                                                 csv_file_path,
+                                                                 wrist_joints=['LWrist', 'RWrist'],
+                                                                ankle_joints=['LAnkle', 'RAnkle'])
+    # filename = "subject_1_motion_0"
+    # csv_file_path = f"../../data/quat_csv_files_filter_wxyz/{filename}.csv"
+    #
+    # segments,boundaries = visualize_motion_with_segmentation(filename,csv_file_path,wrist_joints=['LWrist', 'RWrist'],
+    #                                          ankle_joints=['LAnkle', 'RAnkle'])
 
 if __name__ == "__main__":
     main()

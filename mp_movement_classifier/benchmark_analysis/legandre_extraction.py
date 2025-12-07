@@ -674,16 +674,16 @@ def _plot_distance_matrix(results, save_dir):
 
 def main():
 
-    num_MPs = 20
-    model_dir = os.path.join("./../../results/tmp_configs", f"quaternian_mp_model_{num_MPs}")
+    num_MPs = 10
+    model_dir = os.path.join("./../../results/tmp_configs", f"position_mp_model_{num_MPs}")
     out_dir = os.path.join(model_dir, "legandre_analysis")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    folder_path = "./../../data/quat_csv_files_filter_wxyz"
-    motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=folder_path)
+    folder_path = "./../../data/position_csv_files"
+    motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=folder_path, data_type = "position")
 
 
-    max_degree = 5  # for polynomial degrees as basis function , For 10 degrees (0 to 9)
+    max_degree = 10  # for polynomial degrees as basis function , For 10 degrees (0 to 9)
     coefficients, errors = process_with_legendre_basis(processed_segments, max_degree)
 
     # len(coefficients)  # 6447

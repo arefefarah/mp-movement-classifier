@@ -23,11 +23,6 @@ from mp_movement_classifier.utils.plotting import (
 )
 from mp_movement_classifier.utils import config
 
-DEFAULT_DATA_DIR = "../../data/quat_csv_files_filter_wxyz"
-DEFAULT_TAIL_WINDOW = 50
-MODEL_NAME_SUFFIX: Optional[str] = None
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train and evaluate MP model on BVH data.")
     parser.add_argument("--num-mps", type=int, default=20, help="Number of movement primitives.")
@@ -170,11 +165,11 @@ def main() -> None:
     args = parse_args()
 
     # Fixed configuration (no CLI for these)
-    data_dir = DEFAULT_DATA_DIR
-    tail_window = DEFAULT_TAIL_WINDOW
-    model_name_suffix = MODEL_NAME_SUFFIX
+    data_dir = "../../data/quat_csv_files_filter_wxyz"
+    tail_window = 50
+    model_name_suffix: Optional[str] = None
 
-    motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=data_dir)
+    motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=data_dir,data_type="quaternian")
 
     # Load BVH data
     # print(f"Reading BVH files from: {data_dir}")
