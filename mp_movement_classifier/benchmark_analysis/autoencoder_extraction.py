@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
-import numpy as np
 from typing import List, Tuple, Dict
 
 from sklearn.model_selection import train_test_split
@@ -582,12 +581,12 @@ def analyze_variance_explained(representations):
 
 
 def main():
-    num_MPs = 10
-    model_dir = os.path.join("./../../results/tmp_configs", f"position_mp_model_{num_MPs}")
+    num_MPs = 20
+    model_dir = os.path.join("./../../results/tmp_configs", f"pymotion_quaternian_mp_model_{num_MPs}")
     out_dir = os.path.join(model_dir, "autoencoder_analysis")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    DATA_DIR = "./../../data/position_csv_files"
+    DATA_DIR = "./../../data/pymotion_quat_csv_files"
     MODEL_SAVE_DIR = Path(out_dir) / 'models'
     MODEL_SAVE_DIR.mkdir(exist_ok=True)
     RESULTS_DIR = Path(out_dir) / 'results'
@@ -601,7 +600,7 @@ def main():
     print("\n[1/7] Loading motion data...")
     motion_ids, processed_segments, segment_motion_ids = process_motion_data(
         folder_path=DATA_DIR,
-        data_type='position',
+        data_type='quaternion',
     )
     #flip segments
     all_segmants = []
@@ -622,9 +621,9 @@ def main():
     actual_input_dim = train_dataset.n_features
 
     CONFIG = {
-        'input_dim': actual_input_dim,  # ← Use actual feature dimension (71 quaternian) 17*3 for position
+        'input_dim': actual_input_dim,  # ← Use actual feature dimension (71 quaternion) 17*3 for position
         'hidden_dim': 128,
-        'latent_dim': 32,  # Increased for more features , 32 for position 64 for quaternian
+        'latent_dim': 32,  # Increased for more features , 32 for position 64 for quaternion
         'use_lstm': False,
         'batch_size': 32,
         'n_epochs': 100,

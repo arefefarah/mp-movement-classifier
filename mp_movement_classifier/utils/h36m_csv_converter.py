@@ -201,7 +201,7 @@ class H36MConverter:
 
             columns.append(joint_name + "_x")
             columns.append(joint_name + "_y")
-            columns.append(joint_name + "_zs")
+            columns.append(joint_name + "_z")
             # data.extend(poses_3d[:, joint_idx, :].reshape(-1, 3)
             #     poses_3d[:, :, :].reshape(-1, 3)
 

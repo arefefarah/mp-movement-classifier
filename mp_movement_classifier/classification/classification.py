@@ -473,7 +473,7 @@ def main():
     model_name = f"mp_model_{num_MPs}_cutoff_{cutoff_freq}"
     # model_dir = os.path.join(config.SAVING_DIR, f"mp_model_{num_MPs}_cutoff_{cutoff_freq}_tpoints_{tpoints}")
     # model_dir = os.path.join(config.SAVING_DIR, f"pos_filtered_mp_model_20_cutoff_3_tpoints_30")
-    model_dir = os.path.join(config.SAVING_DIR, f"quaternian_mp_model_{num_MPs}")
+    model_dir = os.path.join(config.SAVING_DIR, f"pymotion_quaternian_mp_model_{num_MPs}")
     model_file = os.path.join(model_dir, f"mp_model_{num_MPs}_PC_tpoints_30")
 
     # model_file = os.path.join(model_dir, f"mp_model_{num_MPs}_PC_init_cutoff_{cutoff_freq}_tpoints_{tpoints}")
@@ -482,7 +482,7 @@ def main():
     out_dir = os.path.join(model_dir, "classification")
     model_path = model_file
 
-    folder_path = "../../data/quat_csv_files_filter_wxyz"
+    folder_path = "../../data/pymption_quat_csv_files"
     # bvh_data, motion_ids = read_bvh_files(folder_path)
     #
     # # Process data according to paper specifications
@@ -492,7 +492,8 @@ def main():
     #     cutoff_freq= cutoff_freq,
     # )
 
-    motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=folder_path)
+    motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=folder_path,
+                                                                             data_type="quaternian")
 
     # based on TMP code: the format of data=list(segment_data[signals,time])
     num_segments = len(processed_segments)

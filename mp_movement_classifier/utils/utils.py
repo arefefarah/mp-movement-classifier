@@ -322,10 +322,10 @@ def segment_motion_csv(file_path , data_type, wrist_joints , ankle_joints):
             joint_speed = calculate_joint_angular_speed(vec) # for exp maps
         elif data_type=="position":
             joint_speed = calculate_joint_linear_speed(vec) # for 3d position coordinate
-        elif data_type=="quaternian":
-            _, joint_speed = calculate_angular_velocity_quat(vec) ## for quaternian representation
+        elif data_type=="quaternion":
+            _, joint_speed = calculate_angular_velocity_quat(vec) ## for quaternion representation
         else  :
-            raise ValueError("data_type must be exp,position or quaternian")
+            raise ValueError("data_type must be exp, position or quaternion")
 
         joint_speeds += joint_speed
 

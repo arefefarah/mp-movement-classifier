@@ -58,6 +58,7 @@ httpx = "^0.28.1"
 # Type hints (if used)
 pandas-stubs = "^2.3.0"
 ffmpeg-python = "^0.2.0"
+upc-pymotion = "^0.2.3"
 
 [tool.poetry.group.dev.dependencies]
 # Testing

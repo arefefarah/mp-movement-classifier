@@ -334,7 +334,7 @@ def visualize_motion_with_segmentation(file_name,csv_file_path, wrist_joints , a
     motion_df = pd.read_csv(csv_file_path)
     frame_rate = 30
     frame_time = 1 / frame_rate
-    segments, boundaries = segment_motion_csv(csv_file_path, data_type= "quaternian",
+    segments, boundaries = segment_motion_csv(csv_file_path, data_type= "quaternion",
                                               wrist_joints = wrist_joints,
                                               ankle_joints = ankle_joints)
     print(f"len of segments: {len(segments)}")
@@ -344,7 +344,7 @@ def visualize_motion_with_segmentation(file_name,csv_file_path, wrist_joints , a
     # # Create time vector
     time_vector = np.arange(motion_df.shape[0]) * frame_time
 
-    target_joints=["LWrist","LKnee","LElbow","LAnkle","Head","LShoulder"]
+    target_joints=["LWrist","LKnee","LElbow","LAnkle","Neck","LShoulder"]
 
     # Create plots
     fig, axes = plt.subplots(len(target_joints), 1, figsize=(16, 5 * len(target_joints)))
@@ -358,7 +358,7 @@ def visualize_motion_with_segmentation(file_name,csv_file_path, wrist_joints , a
     for i, joint_name in enumerate(target_joints):
         columns = [col for col in motion_df.columns if col.startswith(joint_name)]
         axis_angle_rep = motion_df[columns]
-        print(f"axis_angle_rep shape: {axis_angle_rep.shape}")
+        # print(f"axis_angle_rep shape: {axis_angle_rep.shape}")
 
         ax = axes[i]
         ax.set_title(f'{joint_name} Joint rep with Motion Segments',
@@ -396,10 +396,10 @@ def visualize_motion_with_segmentation(file_name,csv_file_path, wrist_joints , a
     plt.tight_layout()
 
 
-    model_dir = os.path.join("./../../results/tmp_configs", f"quaternian_mp_model_20")
+    model_dir = os.path.join("./../../results/tmp_configs", f"pymotion_quaternian_mp_model_20")
     figures_dir = os.path.join(model_dir, "motion_segmentation")
     os.makedirs(figures_dir, exist_ok=True)
-    plt.savefig(os.path.join(figures_dir, f"{file_name}_without_jumps.png"),
+    plt.savefig(os.path.join(figures_dir, f"{file_name}.png"),
                 dpi=300, bbox_inches='tight')
     plt.close()
 
@@ -433,7 +433,7 @@ def main():
 
     for i in range(9):
         filename = f"subject_2_motion_0{i}"
-        csv_file_path = f"../../data/quat_csv_files_filter_wxyz/{filename}.csv"
+        csv_file_path = f"../../data/pymotion_quat_csv_files/{filename}.csv"
         segments,boundaries = visualize_motion_with_segmentation(filename,
                                                                  csv_file_path,
                                                                  wrist_joints=['LWrist', 'RWrist'],
