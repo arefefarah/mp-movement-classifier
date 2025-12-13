@@ -42,7 +42,7 @@ def prepare_save_paths(num_mps: int, cutoff_freq: float, num_t_points: int, mode
     """
     # Organize outputs under a dedicated directory
     # model_dir = os.path.join(config.SAVING_DIR, f"mp_model_{num_mps}_cutoff_{cutoff_freq}_tpoints_{num_t_points}")
-    model_dir = os.path.join(config.SAVING_DIR, f"pymotion_quaternian_mp_model_{num_mps}")
+    model_dir = os.path.join(config.SAVING_DIR, f"pymotion_quaternion_mp_model_{num_mps}")
     os.makedirs(model_dir, exist_ok=True)
 
     model_name = f"mp_model_{num_mps}_PC_tpoints_{num_t_points}"

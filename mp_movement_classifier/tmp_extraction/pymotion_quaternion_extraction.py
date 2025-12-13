@@ -4,18 +4,19 @@ import numpy as np
 from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
+import webbrowser
+import os
+from pymotion.render.viewer import Viewer
 
 from mp_movement_classifier.utils.h36m_csv_converter import H36MConverter
 
 
 path = Path("../../data/MMpose/df_files_3d")
-
 output_dir = Path("../../data/pymotion_quat_csv_files")
 output_dir.mkdir(exist_ok=True)
 
 
 converter = H36MConverter()
-
 for csv_file in path.glob("*.csv"):
     bvh_file = Path("../../data/bvh_files") / csv_file.name.replace(".csv", ".bvh")
     out_file = output_dir / csv_file.name

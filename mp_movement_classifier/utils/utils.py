@@ -188,7 +188,12 @@ def calculate_angular_velocity_quat(quaternions, frame_rate=30):
 
     # Get consecutive quaternion pairs
     q1 = quaternions[:-1]  # [N-1, 4]
+    # print(" ")
+    # print(q1)
+    # print("*******")
+
     q2 = quaternions[1:]  # [N-1, 4]
+    # print(q2)
 
     # Compute conjugate of q1
     q1_conj = quaternion_conjugate(q1)
@@ -198,6 +203,7 @@ def calculate_angular_velocity_quat(quaternions, frame_rate=30):
 
     # Extract vector part (x, y, z) and scale
     angular_velocities = (2.0 / dt) * q_diff[:, 1:]  # [N-1, 3]
+    print(angular_velocities)
 
     # Compute angular speeds (magnitudes)
     angular_speeds = np.linalg.norm(angular_velocities, axis=1)
@@ -329,7 +335,7 @@ def segment_motion_csv(file_path , data_type, wrist_joints , ankle_joints):
 
         joint_speeds += joint_speed
 
-    min_boundary_distance = 1 #1 second for now
+    min_boundary_distance = 4 #1 second for now
     frame_rate = 30
     frame_time = 1 / frame_rate
     min_frames = int(min_boundary_distance *frame_rate)

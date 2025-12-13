@@ -15,133 +15,32 @@ from matplotlib.animation import FuncAnimation
 
 from mp_movement_classifier.utils.utils import calculate_angular_velocity_quat,segment_motion_csv
 from mp_movement_classifier.utils import config
+from pymotion.io.bvh import BVH
+from pymotion.ops.skeleton import from_root_positions, fk
+from pathlib import Path
+from scipy.spatial.transform import Rotation as R
+import webbrowser
+import os
+from pymotion.render.viewer import Viewer
+
+from mp_movement_classifier.utils.h36m_csv_converter import H36MConverter
 
 
-def parse_bvh_robust(file_path):
-    """
-    Robust BVH parser that handles various format issues
-    """
-    with open(file_path, 'r') as file:
-        content = file.read()
+def run_patched(self, debug=True, use_reloader=None):
+    """Patched run method for Dash 3.x compatibility with layout check"""
+    if use_reloader is None:
+        use_reloader = self.use_reloader
 
-    # Split into hierarchy and motion sections
-    parts = content.split('MOTION')
-    if len(parts) < 2:
-        print("❌ Invalid BVH format: No MOTION section found")
-        return None, None, None, None
+    figure = self._create_figure()
+    frames = [self._update_figure(frame) for frame in range(self.max_frames)]
+    self._update_layout(figure, frames)
+    self._set_up_callbacks()
 
-    hierarchy = parts[0]
-    motion_part = parts[1]
+    if not os.environ.get("WERKZEUG_RUN_MAIN"):
+        webbrowser.open_new("http://localhost:8050")
 
-    # Extract joint information
-    joints = {}
-    channel_index = 0
-
-    # Find all joints and their channels
-    joint_pattern = r'(ROOT|JOINT)\s+(\w+)'
-    channel_pattern = r'CHANNELS\s+(\d+)\s+(.*)'
-
-    lines = hierarchy.split('\n')
-    current_joint = None
-
-    for line in lines:
-        line = line.strip()
-
-        # Find joint names
-        joint_match = re.search(joint_pattern, line)
-        if joint_match:
-            current_joint = joint_match.group(2)
-
-        # Find channels
-        channel_match = re.search(channel_pattern, line)
-        if channel_match and current_joint:
-            num_channels = int(channel_match.group(1))
-            channels = channel_match.group(2).split()
-
-            joints[current_joint] = {
-                'channels': channels,
-                'start_index': channel_index
-            }
-            channel_index += num_channels
-
-    # Extract motion data
-    motion_lines = motion_part.strip().split('\n')
-
-    # Get frame info
-    frames = 0
-    frame_time = 0.0
-
-    for line in motion_lines:
-        if line.startswith('Frames:'):
-            frames = int(line.split(':')[1].strip())
-        elif line.startswith('Frame Time:'):
-            frame_time = float(line.split(':')[1].strip())
-
-    if frames == 0:
-        print("❌ No frame information found in BVH file")
-        return None, None, None, None
-
-    # Extract frame data
-    frame_data = []
-
-    for line in motion_lines:
-        line = line.strip()
-        if line and not line.startswith('Frames') and not line.startswith('Frame Time'):
-            try:
-                values = [float(x) for x in line.split()]
-                frame_data.extend(values)
-            except ValueError:
-                continue
-
-    # Calculate expected total channels
-    total_channels = sum(len(joint['channels']) for joint in joints.values())
-    expected_data_points = total_channels * frames
-
-    if len(frame_data) < expected_data_points:
-        print(f"⚠️ Warning: Less data than expected. Using available frames.")
-        available_frames = len(frame_data) // total_channels
-        motion_data = np.array(frame_data[:available_frames * total_channels]).reshape(available_frames, total_channels)
-        frames = available_frames
-    else:
-        motion_data = np.array(frame_data[:expected_data_points]).reshape(frames, total_channels)
-
-    return joints, motion_data, frame_time, frames
-
-
-def apply_butterworth_smoothing(motion_data, cutoff_freq=6.0, filter_order=6, sampling_freq=30):
-    """
-    Apply sixth-order Butterworth filter to motion capture data
-
-    Returns:
-        smoothed_data: filtered motion data
-    """
-    nyquist_freq = sampling_freq / 2.0
-
-    # Validate cutoff frequency
-    if cutoff_freq >= nyquist_freq:
-        print(f"⚠️ Warning: Cutoff frequency ({cutoff_freq} Hz) is too high for sampling rate ({sampling_freq:.1f} Hz)")
-        cutoff_freq = nyquist_freq * 0.8  # Use 80% of Nyquist frequency
-        print(f"   Adjusting cutoff to {cutoff_freq:.1f} Hz")
-
-    # Normalize cutoff frequency
-    normalized_cutoff = cutoff_freq / nyquist_freq
-
-    # Design Butterworth filter
-    b, a = butter(filter_order, normalized_cutoff, btype='low', analog=False)
-
-    # Apply filter to each channel
-    smoothed_data = np.zeros_like(motion_data)
-
-    # Suppress warnings for small datasets
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-
-        for channel in range(motion_data.shape[1]):
-            # Use filtfilt for zero-phase filtering (bidirectional)
-            smoothed_data[:, channel] = filtfilt(b, a, motion_data[:, channel])
-
-    return smoothed_data
-
+    # Use app.run() instead of app.run_server()
+    self.app.run(debug=debug, use_reloader=use_reloader)
 
 def compute_joint_speed(motion_data, joints, frame_time, wrist_joints=['LeftWrist', 'RightWrist'],
                         ankle_joints=['LeftAnkle', 'RightAnkle']):
@@ -329,12 +228,12 @@ def set_axes_equal(ax):
     ax.set_zlim3d([mid_z - max_range/2, mid_z + max_range/2])
 
 
-def visualize_motion_with_segmentation(file_name,csv_file_path, wrist_joints , ankle_joints):
+def visualize_motion_with_segmentation(file_name,csv_file_path, wrist_joints , ankle_joints,save_dir):
 
     motion_df = pd.read_csv(csv_file_path)
     frame_rate = 30
     frame_time = 1 / frame_rate
-    segments, boundaries = segment_motion_csv(csv_file_path, data_type= "quaternion",
+    segments, boundaries = segment_motion_csv(csv_file_path, data_type= "position",
                                               wrist_joints = wrist_joints,
                                               ankle_joints = ankle_joints)
     print(f"len of segments: {len(segments)}")
@@ -358,7 +257,6 @@ def visualize_motion_with_segmentation(file_name,csv_file_path, wrist_joints , a
     for i, joint_name in enumerate(target_joints):
         columns = [col for col in motion_df.columns if col.startswith(joint_name)]
         axis_angle_rep = motion_df[columns]
-        # print(f"axis_angle_rep shape: {axis_angle_rep.shape}")
 
         ax = axes[i]
         ax.set_title(f'{joint_name} Joint rep with Motion Segments',
@@ -396,7 +294,7 @@ def visualize_motion_with_segmentation(file_name,csv_file_path, wrist_joints , a
     plt.tight_layout()
 
 
-    model_dir = os.path.join("./../../results/tmp_configs", f"pymotion_quaternian_mp_model_20")
+    model_dir = save_dir
     figures_dir = os.path.join(model_dir, "motion_segmentation")
     os.makedirs(figures_dir, exist_ok=True)
     plt.savefig(os.path.join(figures_dir, f"{file_name}.png"),
@@ -429,49 +327,136 @@ def calculate_joint_angular_speed(rotation_vectors, frame_rate=30):
 
     return angular_speeds
 
-def main():
 
-    for i in range(9):
-        filename = f"subject_2_motion_0{i}"
-        csv_file_path = f"../../data/pymotion_quat_csv_files/{filename}.csv"
-        segments,boundaries = visualize_motion_with_segmentation(filename,
-                                                                 csv_file_path,
-                                                                 wrist_joints=['LWrist', 'RWrist'],
-                                                                ankle_joints=['LAnkle', 'RAnkle'])
-    # filename = "subject_1_motion_0"
-    # csv_file_path = f"../../data/quat_csv_files_filter_wxyz/{filename}.csv"
-    #
-    # segments,boundaries = visualize_motion_with_segmentation(filename,csv_file_path,wrist_joints=['LWrist', 'RWrist'],
-    #                                          ankle_joints=['LAnkle', 'RAnkle'])
+
+
+def main():
+    joint_names = [
+        'Hip', 'RHip', 'RKnee', 'RAnkle', 'LHip', 'LKnee', 'LAnkle',
+        'Spine', 'Thorax', 'Neck',
+        'LShoulder', 'LElbow', 'LWrist', 'RShoulder', 'RElbow', 'RWrist'
+    ]
+    model_dir = os.path.join("./../../results/tmp_configs", f"pymotion_quaternion_mp_model_20")
+    figures_dir = os.path.join("./../../results/segmentation_analysis")
+    Path(figures_dir).mkdir(exist_ok=True)
+    # for i in range(9):
+    filename = f"subject_1_motion_05"
+    csv_file_path = f"../../data/pymotion_quat_csv_files/{filename}.csv"
+    csv_file = "../../data/pymotion_quat_csv_files/subject_1_motion_05.csv"
+    bvh_reference = "../../data/bvh_files/subject_1_motion_05.bvh"
+
+    wrist_joints = ["LWrist", "RWrist"]
+    ankle_joints = ["LAnkle", "RAnkle"]
+
+
+    # segments,boundaries = visualize_motion_with_segmentation(filename,
+    #                                                          csv_file_path,
+    #                                                          wrist_joints=['LWrist', 'RWrist'],
+    #                                                         ankle_joints=['LAnkle', 'RAnkle'],
+    #                                                          save_dir = model_dir)
+
+
+    # see the animation of all segments for one particular movement
+    viewer = Viewer(use_reloader=True, xy_size=5, framerate=30)
+    Viewer.run = run_patched
+
+    bvh = BVH()
+    bvh.load("../../data/bvh_files/subject_12_motion_02.bvh")
+
+    local_rotations, local_positions, parents, offsets, _, _ = bvh.get_data()
+    global_positions = local_positions[:, 0, :]  # root joint
+    pos, rotmats = fk(local_rotations, global_positions, offsets, parents)
+    # rotmats shape: (T, N, 3, 3) - global rotation matrices
+
+    # converter = H36MConverter() use converter to save csv file in future
+    # Create the DataFrame for positions
+    columns = []
+    data = []
+    for joint_idx, joint_name in enumerate(joint_names):
+        columns.append(joint_name + "_x")
+        columns.append(joint_name + "_y")
+        columns.append(joint_name + "_z")
+
+    for frame, pose in enumerate(pos):
+        data_frame = []
+        for joint_idx, joint_name in enumerate(joint_names):
+            data_frame.extend(pose[joint_idx, :])
+        data.append(data_frame)
+
+    df = pd.DataFrame(data, columns=columns)
+    output_path = os.path.join(Path(figures_dir),f"positions_{filename}.csv")
+    df.to_csv(output_path, index=False)
+    print(f"file saved to {output_path}")
+
+    # use previous segmentation for this position csv file
+    segments, boundaries = visualize_motion_with_segmentation(filename,
+                                                              csv_file_path = output_path,
+                                                              wrist_joints=['LWrist', 'RWrist'],
+                                                              ankle_joints=['LAnkle', 'RAnkle'],
+                                                              save_dir=figures_dir)
+
+    for boundary in boundaries:
+        seg_to_show  = pos[boundary[0]:boundary[1],:,:]
+    boundary = boundaries[2]
+    print(pos.shape)
+    print(boundary[0])
+    print(rotmats.shape)
+    print(rotmats[0,0,:])
+
+## plot trajectories for all positions, axis-angle rep, quaternion rep
+
+    plt.plot(pos[:, 2, 0])
+    plt.plot(pos[:, 2, 1])
+    plt.plot(pos[:, 2, 2])
+    plt.title("Position representation")
+    plt.legend(["x","y","z"])
+    plt.xlabel("Frame")
+    plt.savefig(os.path.join(figures_dir, "position_trajectory.png"))
+    plt.close()
+
+    # ===== Convert to Quaternions =====
+    T, N, _, _ = rotmats.shape
+    quaternions = np.zeros((T, N, 4))  # (x, y, z, w) format
+    for t in range(T):
+        for j in range(N):
+            rot = R.from_matrix(rotmats[t, j])
+            quaternions[t, j] = rot.as_quat()  # Returns (x, y, z, w)
+
+    print(f"Quaternions shape: {quaternions.shape}")  # (T, N, 4)
+    plt.plot(quaternions[:, 2, 0])
+    plt.plot(quaternions[:, 2, 1])
+    plt.plot(quaternions[:, 2, 2])
+    plt.plot(quaternions[:, 2, 3])
+    plt.title("Quaternions representation")
+    plt.legend(["x","y","z","w"])
+    plt.xlabel("Frame")
+    plt.savefig(os.path.join(figures_dir,"quaternions_trajectory.png"))
+    plt.close()
+
+    # ===== Convert to Axis-Angle =====
+    axis_angles = np.zeros((T, N, 3))  # Scaled axis-angle representation
+    for t in range(T):
+        for j in range(N):
+            rot = R.from_matrix(rotmats[t, j])
+            axis_angles[t, j] = rot.as_rotvec()  # Returns axis * angle
+
+    print(f"Axis-angle shape: {axis_angles.shape}")  # (T, N, 3)
+    plt.plot(axis_angles[:, 2, 1])
+    plt.plot(axis_angles[:, 2, 1])
+    plt.plot(axis_angles[:, 2, 2])
+    plt.title("Axis-angle representation")
+    plt.legend(["x","y","z"])
+    plt.xlabel("Frame")
+    plt.savefig(os.path.join(figures_dir,"axis_angles_trajectory.png"))
+    plt.close()
+
+    viewer.add_skeleton(pos[boundary[0]:boundary[1],:,:], parents)
+    # add additional info using add_sphere(...) and/or add_line(...), examples:
+    # viewer.add_sphere(sphere_pos, color="green")
+    # viewer.add_line(start_pos, end_pos, color="green")
+    viewer.add_floor()
+    viewer.run()
+
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-# segments, boundaries, boundary_frames,speeds = segment_motion_trajectories(
-    #     bvh_filename,
-    #     motion_data,
-    #     joints,
-    #     frame_time,
-    #     target_joints=['LeftAnkle', 'RightWrist', 'LeftKnee', 'RightKnee', 'RightHip'],
-    #     min_boundary_distance=1
-    # )
-    # print(f"   ✅ Found {len(segments)} motion segments")
-    #
-    # animation_paths = create_all_segment_animations(
-    #     bvh_filename,
-    #     boundaries,
-    #     joints,
-    #     smoothed_motion_data,
-    #     frame_time
-    # )
-    #
-    # overview_path = visualize_segment_comparison(
-    #     bvh_filename,
-    #     boundaries,
-    #     speeds,
-    #     frame_time
-    # )

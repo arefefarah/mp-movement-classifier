@@ -675,7 +675,7 @@ def _plot_distance_matrix(results, save_dir):
 def main():
 
     num_MPs = 20
-    model_dir = os.path.join("./../../results/tmp_configs", f"pymotion_quaternian_mp_model_{num_MPs}")
+    model_dir = os.path.join("./../../results/tmp_configs", f"pymotion_quaternion_mp_model_{num_MPs}")
     out_dir = os.path.join(model_dir, "legandre_analysis")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
