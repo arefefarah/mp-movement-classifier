@@ -11,15 +11,15 @@ from pymotion.render.viewer import Viewer
 from mp_movement_classifier.utils.h36m_csv_converter import H36MConverter
 
 
-path = Path("../../data/MMpose/df_files_3d")
-output_dir = Path("../../data/pymotion_quat_csv_files")
+path = Path("../../data/bvh_files")
+output_dir = Path("../../data/pymotion_position_csv_files")
 output_dir.mkdir(exist_ok=True)
 
 
 converter = H36MConverter()
-for csv_file in path.glob("*.csv"):
-    bvh_file = Path("../../data/bvh_files") / csv_file.name.replace(".csv", ".bvh")
-    out_file = output_dir / csv_file.name
+for bvh_file in path.glob("*.bvh"):
+    # bvh_file = Path("../../data/bvh_files") / csv_file.name.replace(".csv", ".bvh")
+    out_file = output_dir / bvh_file.name.replace(".bvh", ".csv")
 
     bvh = BVH()
     bvh.load(bvh_file)
@@ -31,30 +31,50 @@ for csv_file in path.glob("*.csv"):
         'Spine', 'Thorax', 'Neck',
         'LShoulder', 'LElbow', 'LWrist', 'RShoulder', 'RElbow', 'RWrist'
     ]
-    # print(f"Number of joints: {len(parents)}")
-    mmpose_positions = converter.convert_csv_to_numpy(csv_file)  # Shape: (T, N, 3)
+    # # print(f"Number of joints: {len(parents)}")
+    # mmpose_positions = converter.convert_csv_to_numpy(csv_file)  # Shape: (T, N, 3)
+    #
+    # # Convert positions to quaternion rotations
+    # quaternion_rotations = from_root_positions(mmpose_positions, parents, offsets)
+    # # Returns shape: (T, N, 4) - quaternions in (x, y, z, w) format
+    #
+    # # Reorder to (w, x, y, z) format to be compatible with quaternion angular speed calculation
+    # quaternion_rotations_wxyz = np.roll(quaternion_rotations, shift=1, axis=-1)
+    # # New shape: (T, N, 4) in (w, x, y, z) format
 
-    # Convert positions to quaternion rotations
-    quaternion_rotations = from_root_positions(mmpose_positions, parents, offsets)
-    # Returns shape: (T, N, 4) - quaternions in (x, y, z, w) format
+    global_positions = local_positions[:, 0, :]  # root joint
+    pos, rotmats = fk(local_rotations, global_positions, offsets, parents)
 
-    # Reorder to (w, x, y, z) format to be compatible with quaternion angular speed calculation
-    quaternion_rotations_wxyz = np.roll(quaternion_rotations, shift=1, axis=-1)
-    # New shape: (T, N, 4) in (w, x, y, z) format
-
+    # Create the DataFrame for positions
     columns = []
+    data = []
     for joint_idx, joint_name in enumerate(joint_names):
+        columns.append(joint_name + "_x")
+        columns.append(joint_name + "_y")
+        columns.append(joint_name + "_z")
 
-        columns.append(joint_name + "_w")
-        columns.append(joint_name +"_x")
-        columns.append(joint_name +"_y")
-        columns.append(joint_name +"_z")
+    for frame, pose in enumerate(pos):
+        data_frame = []
+        for joint_idx, joint_name in enumerate(joint_names):
+            data_frame.extend(pose[joint_idx, :])
+        data.append(data_frame)
 
-    #reshape
-    quaternion_data = quaternion_rotations.reshape(quaternion_rotations.shape[0], -1)
-    df = pd.DataFrame(quaternion_data, columns=columns)
+    df = pd.DataFrame(data, columns=columns)
     df.to_csv(out_file, index=False)
     print(f"file saved to {out_file}")
+    # columns = []
+    # for joint_idx, joint_name in enumerate(joint_names):
+    #
+    #     columns.append(joint_name + "_w")
+    #     columns.append(joint_name +"_x")
+    #     columns.append(joint_name +"_y")
+    #     columns.append(joint_name +"_z")
+    #
+    # #reshape
+    # quaternion_data = quaternion_rotations.reshape(quaternion_rotations.shape[0], -1)
+    # df = pd.DataFrame(quaternion_data, columns=columns)
+    # df.to_csv(out_file, index=False)
+    # print(f"file saved to {out_file}")
 
 
 def visualize_trajectory(quaternion_rotations, joint_names):
