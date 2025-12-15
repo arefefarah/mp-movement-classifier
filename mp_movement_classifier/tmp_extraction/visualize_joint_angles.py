@@ -11,6 +11,12 @@ from scipy import signal
 from scipy.signal import butter, filtfilt, welch
 from scipy.signal import find_peaks
 import warnings
+import plotly.graph_objects as go
+import plotly.io as pio
+import io
+from PIL import Image
+import json
+import imageio.v2 as imageio
 from matplotlib.animation import FuncAnimation
 
 from mp_movement_classifier.utils.utils import calculate_angular_velocity_quat,segment_motion_csv
@@ -293,9 +299,7 @@ def visualize_motion_with_segmentation(file_name,csv_file_path, wrist_joints , a
 
     plt.tight_layout()
 
-
-    model_dir = save_dir
-    figures_dir = os.path.join(model_dir, "motion_segmentation")
+    figures_dir = os.path.join(save_dir, "motion_segmentation")
     os.makedirs(figures_dir, exist_ok=True)
     plt.savefig(os.path.join(figures_dir, f"{file_name}.png"),
                 dpi=300, bbox_inches='tight')
@@ -328,8 +332,6 @@ def calculate_joint_angular_speed(rotation_vectors, frame_rate=30):
     return angular_speeds
 
 
-
-
 def main():
     joint_names = [
         'Hip', 'RHip', 'RKnee', 'RAnkle', 'LHip', 'LKnee', 'LAnkle',
@@ -340,33 +342,23 @@ def main():
     figures_dir = os.path.join("./../../results/segmentation_analysis")
     Path(figures_dir).mkdir(exist_ok=True)
     # for i in range(9):
-    filename = f"subject_1_motion_05"
-    csv_file_path = f"../../data/pymotion_quat_csv_files/{filename}.csv"
-    csv_file = "../../data/pymotion_quat_csv_files/subject_1_motion_05.csv"
-    bvh_reference = "../../data/bvh_files/subject_1_motion_05.bvh"
-
-    wrist_joints = ["LWrist", "RWrist"]
-    ankle_joints = ["LAnkle", "RAnkle"]
-
-
-    # segments,boundaries = visualize_motion_with_segmentation(filename,
-    #                                                          csv_file_path,
-    #                                                          wrist_joints=['LWrist', 'RWrist'],
-    #                                                         ankle_joints=['LAnkle', 'RAnkle'],
-    #                                                          save_dir = model_dir)
-
-
-    # see the animation of all segments for one particular movement
-    viewer = Viewer(use_reloader=True, xy_size=5, framerate=30)
-    Viewer.run = run_patched
+    filename = f"subject_1_motion_02"
+    csv_file = f"../../data/pymotion_quat_csv_files/{filename}.csv"
+    bvh_reference = f"../../data/bvh_files/{filename}.bvh"
+    MAPPING_FILE = "../../data/common_motion_mapping.json"
+    motion_id_str = filename.split('_')[-1]
+    with open(MAPPING_FILE, 'r') as f:
+            data = json.load(f)
+            motion_mapping = data["mapping"]
+    id_to_motion_name = {id_val: motion_name for motion_name, id_val in motion_mapping.items()}
+    motion_name = id_to_motion_name.get(int(motion_id_str))
+    print(motion_name)
 
     bvh = BVH()
-    bvh.load("../../data/bvh_files/subject_12_motion_02.bvh")
-
+    bvh.load(bvh_reference)  # load euler angle rep from bvh data
     local_rotations, local_positions, parents, offsets, _, _ = bvh.get_data()
     global_positions = local_positions[:, 0, :]  # root joint
     pos, rotmats = fk(local_rotations, global_positions, offsets, parents)
-    # rotmats shape: (T, N, 3, 3) - global rotation matrices
 
     # converter = H36MConverter() use converter to save csv file in future
     # Create the DataFrame for positions
@@ -384,24 +376,39 @@ def main():
         data.append(data_frame)
 
     df = pd.DataFrame(data, columns=columns)
-    output_path = os.path.join(Path(figures_dir),f"positions_{filename}.csv")
+    csv_files_dir = Path(figures_dir) / "position_csv_files"
+    os.makedirs(csv_files_dir, exist_ok=True)
+    output_path = os.path.join(Path(csv_files_dir),f"{filename}.csv")
     df.to_csv(output_path, index=False)
     print(f"file saved to {output_path}")
+
+    segment_save_dir = Path(figures_dir) / "segments_animation_filtered" / motion_name
+    os.makedirs(segment_save_dir, exist_ok=True)
 
     # use previous segmentation for this position csv file
     segments, boundaries = visualize_motion_with_segmentation(filename,
                                                               csv_file_path = output_path,
                                                               wrist_joints=['LWrist', 'RWrist'],
                                                               ankle_joints=['LAnkle', 'RAnkle'],
-                                                              save_dir=figures_dir)
+                                                              save_dir=segment_save_dir)
 
-    for boundary in boundaries:
-        seg_to_show  = pos[boundary[0]:boundary[1],:,:]
-    boundary = boundaries[2]
-    print(pos.shape)
-    print(boundary[0])
-    print(rotmats.shape)
-    print(rotmats[0,0,:])
+    for i, boundary in enumerate(boundaries):
+        viewer = Viewer(use_reloader=True, xy_size=5, framerate=30)
+        Viewer.run = run_patched
+        viewer.add_skeleton(pos[boundary[0] or 0:boundary[1], :, :], parents)
+        viewer.add_floor()
+        # viewer.run()
+
+        print("Generating GIF... this may take a moment.")
+        frames = []
+        for j in range(viewer.max_frames):
+            fig = viewer._create_figure(frame=j)
+            img_bytes = fig.to_image(format="png", width=800, height=600, scale=2)
+            frames.append(imageio.imread(img_bytes))
+            if j % 10 == 0:
+                print(f"Processed frame {j}/{viewer.max_frames}")
+        imageio.mimsave(segment_save_dir/f'seg{i}_{filename}.gif', frames, fps = 30, loop=0)
+        print("Saved animation")
 
 ## plot trajectories for all positions, axis-angle rep, quaternion rep
 
@@ -411,7 +418,7 @@ def main():
     plt.title("Position representation")
     plt.legend(["x","y","z"])
     plt.xlabel("Frame")
-    plt.savefig(os.path.join(figures_dir, "position_trajectory.png"))
+    plt.savefig(os.path.join(segment_save_dir, "position_trajectory.png"))
     plt.close()
 
     # ===== Convert to Quaternions =====
@@ -430,7 +437,7 @@ def main():
     plt.title("Quaternions representation")
     plt.legend(["x","y","z","w"])
     plt.xlabel("Frame")
-    plt.savefig(os.path.join(figures_dir,"quaternions_trajectory.png"))
+    plt.savefig(os.path.join(segment_save_dir,"quaternions_trajectory.png"))
     plt.close()
 
     # ===== Convert to Axis-Angle =====
@@ -447,15 +454,18 @@ def main():
     plt.title("Axis-angle representation")
     plt.legend(["x","y","z"])
     plt.xlabel("Frame")
-    plt.savefig(os.path.join(figures_dir,"axis_angles_trajectory.png"))
+    plt.savefig(os.path.join(segment_save_dir,"axis_angles_trajectory.png"))
     plt.close()
 
-    viewer.add_skeleton(pos[boundary[0]:boundary[1],:,:], parents)
-    # add additional info using add_sphere(...) and/or add_line(...), examples:
-    # viewer.add_sphere(sphere_pos, color="green")
-    # viewer.add_line(start_pos, end_pos, color="green")
-    viewer.add_floor()
-    viewer.run()
+    # boundary = boundaries[0]
+    # # it doeasnt work when boundary[0] == 0 so we put or 0  to make it true
+    # viewer.add_skeleton(pos[boundary[0] or 0 :boundary[1],:,:], parents)
+    # # add additional info using add_sphere(...) and/or add_line(...), examples:
+    # # viewer.add_sphere(sphere_pos, color="green")
+    # # viewer.add_line(start_pos, end_pos, color="green")
+    # viewer.add_floor()
+    # viewer.run()
+
 
 
 if __name__ == "__main__":

@@ -299,10 +299,8 @@ def process_motion_data(folder_path,data_type):
                 # print(f"   ✅ Found {len(segments)} motion segments")
                 min_segment_length = 10
                 for segment in segments:
-                    if segment.shape[0] >= min_segment_length:
-
-                        processed_segments.append(segment.T)  # Transpose to [signals, time]
-                        segment_motion_ids.append(motion_id)
+                    processed_segments.append(segment.T)  # Transpose to [signals, time]
+                    segment_motion_ids.append(motion_id)
 
 
                 # pass without segmentation
@@ -318,11 +316,14 @@ def process_motion_data(folder_path,data_type):
 
 def segment_motion_csv(file_path , data_type, wrist_joints , ankle_joints):
     motion_df = pd.read_csv(file_path)
+    # apply butter filter
+    smoothed_motion_df = filter_motion_data(motion_df, cutoff_freq=6, sampling_rate=30)
+
+
     joint_speeds=0
     for joint_name in wrist_joints + ankle_joints:
-        columns = [col for col in motion_df.columns if col.startswith(joint_name)]
-
-        selected_df = motion_df[columns]
+        columns = [col for col in smoothed_motion_df.columns if col.startswith(joint_name)]
+        selected_df = smoothed_motion_df[columns]
         vec = selected_df.to_numpy()
         if data_type=="exp":
             joint_speed = calculate_joint_angular_speed(vec) # for exp maps
@@ -345,12 +346,21 @@ def segment_motion_csv(file_path , data_type, wrist_joints , ankle_joints):
 
     boundaries = [boundary_frames[i:i + 2] for i in range(len(boundary_frames) - 1)]
     segments = []
+    filtered_boundaries =[]
     for boundary in boundaries:
-        seg_df = motion_df.iloc[boundary[0]:boundary[1], :]
-        segments.append(seg_df.to_numpy())
-    # segments = [motion_df.iloc[boundary[0]:boundary[1], :] for boundary in boundaries]
+        seg_df = smoothed_motion_df.iloc[boundary[0]:boundary[1], :]
+        if len(seg_df)> 60:  # 2 second minimum
+            segments.append(seg_df.to_numpy())
+            filtered_boundaries.append(boundary)
 
-    return segments,boundaries
+    if len(segments)==0: # no peak found
+        segments.append(smoothed_motion_df.to_numpy())
+        filtered_boundaries.append([0,len(smoothed_motion_df)-1])
+
+
+    # segments = [smoothed_motion_df.iloc[boundary[0]:boundary[1], :] for boundary in boundaries]
+
+    return segments,filtered_boundaries
 
 def read_bvh_files(folder_path):
     bvh_data = []
@@ -526,31 +536,27 @@ def compute_joint_speed(motion_data, joints, frame_time, wrist_joints=['LeftWris
     return joint_speeds
 
 
-def filter_motion_data(data, cutoff_freq=6.0, sampling_rate=None, filter_order=4):
+def filter_motion_data(data, cutoff_freq=6.0, sampling_rate=30, filter_order=4):
     """
-    Apply sixth-order zero-lag Butterworth filter to motion capture data
+    Apply sixth-order zero-lag Butterworth filter to motion capture DataFrame.
 
     Args:
-        data: motion data array
-        cutoff_freq: cutoff frequency in Hz (default 6.0)
-        sampling_rate: frames per second (if None, inferred from data length/time)
-        filter_order: filter order (default 6)
+        data (pd.DataFrame): Input DataFrame (rows=frames, cols=channels)
+        cutoff_freq (float): Cutoff frequency in Hz
+        sampling_rate (int): Frames per second
+        filter_order (int): Filter order
 
     Returns:
-        filtered_data: filtered motion data
+        pd.DataFrame: A new DataFrame with filtered data (original is not modified)
     """
-    # If sampling rate not provided, use a default or try to compute
-    if sampling_rate is None:
-        # Estimate sampling rate (assuming uniform sampling)
-        sampling_rate = 1.0 / (data.shape[0] * 0.033)  # Assuming ~30 fps if not specified
+    filtered_df = data.copy()
 
-    # Compute Nyquist frequency
     nyquist_freq = sampling_rate / 2.0
 
     # Validate cutoff frequency
     if cutoff_freq >= nyquist_freq:
         print(f"⚠️ Warning: Cutoff frequency ({cutoff_freq} Hz) is too high for sampling rate ({sampling_rate:.1f} Hz)")
-        cutoff_freq = nyquist_freq * 0.8  # Use 80% of Nyquist frequency
+        cutoff_freq = nyquist_freq * 0.8
         print(f"   Adjusting cutoff to {cutoff_freq:.1f} Hz")
 
     # Normalize cutoff frequency
@@ -559,19 +565,63 @@ def filter_motion_data(data, cutoff_freq=6.0, sampling_rate=None, filter_order=4
     # Design Butterworth filter
     b, a = butter(filter_order, normalized_cutoff, btype='low', analog=False)
 
-    # Apply filter to each channel
-    filtered_data = np.zeros_like(data)
-
     # Suppress warnings for small datasets
     import warnings
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
 
-        for channel in range(data.shape[1]):
-            # Use filtfilt for zero-phase filtering (bidirectional)
-            filtered_data[:, channel] = filtfilt(b, a, data[:, channel])
+        # 2. Apply filter
+        # 'filtfilt' can process the entire 2D array at once.
+        # axis=0 means we filter along the index (down the rows/frames).
+        # We assign the result back to the values of our copied DataFrame.
+        filtered_values = filtfilt(b, a, filtered_df.values, axis=0)
 
-    return filtered_data
+        # Update the DataFrame with the filtered values
+        filtered_df.iloc[:, :] = filtered_values
+
+    return filtered_df
+
+# def filter_motion_data(data, cutoff_freq=6.0, sampling_rate=30, filter_order=4):
+#     """
+#     Apply sixth-order zero-lag Butterworth filter to motion capture data
+#
+#     Args:
+#         data: motion data array
+#         cutoff_freq: cutoff frequency in Hz (default 6.0)
+#         sampling_rate: frames per second (if None, inferred from data length/time)
+#         filter_order: filter order (default 6)
+#
+#     Returns:
+#         filtered_data: filtered motion data
+#     """
+#     # Compute Nyquist frequency
+#     nyquist_freq = sampling_rate / 2.0
+#
+#     # Validate cutoff frequency
+#     if cutoff_freq >= nyquist_freq:
+#         print(f"⚠️ Warning: Cutoff frequency ({cutoff_freq} Hz) is too high for sampling rate ({sampling_rate:.1f} Hz)")
+#         cutoff_freq = nyquist_freq * 0.8  # Use 80% of Nyquist frequency
+#         print(f"   Adjusting cutoff to {cutoff_freq:.1f} Hz")
+#
+#     # Normalize cutoff frequency
+#     normalized_cutoff = cutoff_freq / nyquist_freq
+#
+#     # Design Butterworth filter
+#     b, a = butter(filter_order, normalized_cutoff, btype='low', analog=False)
+#
+#     # Apply filter to each channel
+#     filtered_data = np.zeros_like(data)
+#
+#     # Suppress warnings for small datasets
+#     import warnings
+#     with warnings.catch_warnings():
+#         warnings.simplefilter("ignore")
+#
+#         for channel in range(data.shape[1]):
+#             # Use filtfilt for zero-phase filtering (bidirectional)
+#             filtered_data[:, channel] = filtfilt(b, a, data[:, channel])
+#
+#     return filtered_data
 
 def segment_motion_trajectories(motion_data, joints, frame_time,
                                 wrist_joints=['LeftWrist', 'RightWrist'],

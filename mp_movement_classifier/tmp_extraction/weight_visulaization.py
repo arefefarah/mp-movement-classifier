@@ -26,18 +26,26 @@ from mp_movement_classifier.utils.utils import read_bvh_files, process_bvh_data,
 
 JOINT_NAMES = [
     'Hip', 'RHip', 'RKnee', 'RAnkle', 'LHip', 'LKnee', 'LAnkle',
-    'Spine', 'Thorax', 'Neck', 'Head',
+    'Spine', 'Thorax', 'Neck',
     'LShoulder', 'LElbow', 'LWrist', 'RShoulder', 'RElbow', 'RWrist'
 ]
-
-
-COORD_NAMES = ['W','X', 'Y', 'Z']
 CHANNEL_NAMES = []
 for joint in JOINT_NAMES:
-    if joint=='Hip':
-        CHANNEL_NAMES.extend([f'{joint}_Xpos', f'{joint}_Ypos', f'{joint}_Zpos'])
-    for coord in COORD_NAMES:
-        CHANNEL_NAMES.extend([f'{joint}_{coord}'])
+    CHANNEL_NAMES.extend([f'{joint}_Xpos', f'{joint}_Ypos', f'{joint}_Zpos'])
+
+#### for quaternion
+# JOINT_NAMES = [
+#     'Hip', 'RHip', 'RKnee', 'RAnkle', 'LHip', 'LKnee', 'LAnkle',
+#     'Spine', 'Thorax', 'Neck', 'Head',
+#     'LShoulder', 'LElbow', 'LWrist', 'RShoulder', 'RElbow', 'RWrist'
+# ]
+# COORD_NAMES = ['W','X', 'Y', 'Z']
+# CHANNEL_NAMES = []
+# for joint in JOINT_NAMES:
+#     if joint=='Hip':
+#         CHANNEL_NAMES.extend([f'{joint}_Xpos', f'{joint}_Ypos', f'{joint}_Zpos'])
+#     for coord in COORD_NAMES:
+#         CHANNEL_NAMES.extend([f'{joint}_{coord}'])
 
 DEFAULT_MODEL_DIR = "../../results/tmp_configs"
 DEFAULT_DATA_DIR = "../../data/filtered_bvh_files"
@@ -419,8 +427,8 @@ def main():
     motion_id_to_name = load_motion_mapping(DEFAULT_MOTION_MAPPING)
 
     # model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"pos_filtered_mp_model_20_cutoff_3_tpoints_30")
-    model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"quaternian_mp_model_20")
-    model_name = "mp_model_20_PC_tpoints_30"
+    model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"pymotion_filtered_position_mp_model_5")
+    model_name = "mp_model_5_PC_tpoints_30"
 
     model_path = os.path.join(model_subdir,model_name)
 
@@ -434,16 +442,16 @@ def main():
     weights = np.stack(weights_list, axis=0)
 
     args.bvh_dir = DEFAULT_DATA_DIR
-    folder_path = "../../data/quat_csv_files_filter_wxyz"
-    motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=folder_path,data_type="quaternian")
+    folder_path = "../../data/pymotion_position_csv_files"
+    motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=folder_path,data_type="position")
 
     # Run analyses
     print(f"\n{'=' * 70}")
     print("MP Weights Across Movements".center(70))
     print(f"{'=' * 70}")
     output_dir = os.path.join(model_subdir,"weights_analysis")
-    # compare_weights_across_movements(weights, segment_motion_ids,motion_id_to_name,
-    #                                  output_dir)
+    compare_weights_across_movements(weights, segment_motion_ids,motion_id_to_name,
+                                     output_dir)
     output_dir = os.path.join(output_dir, "median_weights")
     vis_median_weights_movements(weights, segment_motion_ids,motion_id_to_name,
                                      output_dir)

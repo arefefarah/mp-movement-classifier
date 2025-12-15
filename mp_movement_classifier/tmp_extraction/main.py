@@ -40,9 +40,7 @@ def prepare_save_paths(num_mps: int, cutoff_freq: float, num_t_points: int, mode
     """
     Prepare save paths for model and figures.
     """
-    # Organize outputs under a dedicated directory
-    # model_dir = os.path.join(config.SAVING_DIR, f"mp_model_{num_mps}_cutoff_{cutoff_freq}_tpoints_{num_t_points}")
-    model_dir = os.path.join(config.SAVING_DIR, f"pymotion_quaternion_mp_model_{num_mps}")
+    model_dir = os.path.join(config.SAVING_DIR, f"pymotion_filtered_position_mp_model_{num_mps}")
     os.makedirs(model_dir, exist_ok=True)
 
     model_name = f"mp_model_{num_mps}_PC_tpoints_{num_t_points}"
@@ -165,11 +163,11 @@ def main() -> None:
     args = parse_args()
 
     # Fixed configuration (no CLI for these)
-    data_dir = "../../data/pymotion_quat_csv_files"
+    data_dir = "../../data/pymotion_position_csv_files"
     tail_window = 50
     model_name_suffix: Optional[str] = None
 
-    motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=data_dir,data_type="quaternion")
+    motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=data_dir,data_type="position")
 
     # Load BVH data
     # print(f"Reading BVH files from: {data_dir}")
