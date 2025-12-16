@@ -29,7 +29,7 @@ class MP_model(torch.nn.Module):
 
 
     def __init__(self,num_t_points,num_MPs,num_signals=None,num_segments=None,kernel_width=10.0,kernel_var=0.4**2,noise_level=0.03,init_data=None, gpu = False):
-        """Initialize MP model.
+        """Initialize MP
         num_t_points: number of time discretization points onto which the GP for the MPs is conditioned, i.e. the effective parametrization
         num_MPs: number of MPs
         num_signals: number of sensors/signals. May be None, if init_data is supplied

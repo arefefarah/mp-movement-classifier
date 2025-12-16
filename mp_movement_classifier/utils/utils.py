@@ -262,7 +262,7 @@ def calculate_joint_linear_speed(positions, frame_rate=30):
 
     return linear_speeds
 
-def process_motion_data(folder_path,data_type):
+def process_motion_data(folder_path,data_type,filtering ):
     """
     Apply Butterworth filter and segmentation to BVH motion data
     """
@@ -293,7 +293,8 @@ def process_motion_data(folder_path,data_type):
                     file_path,
                     data_type=data_type,
                     wrist_joints=['LWrist', 'RWrist'],
-                    ankle_joints=['LAnkle', 'RAnkle']
+                    ankle_joints=['LAnkle', 'RAnkle'],
+                    filtering= filtering
                 )
 
                 # print(f"   ✅ Found {len(segments)} motion segments")
@@ -314,10 +315,14 @@ def process_motion_data(folder_path,data_type):
 
     return motion_ids,processed_segments, segment_motion_ids
 
-def segment_motion_csv(file_path , data_type, wrist_joints , ankle_joints):
-    motion_df = pd.read_csv(file_path)
-    # apply butter filter
-    smoothed_motion_df = filter_motion_data(motion_df, cutoff_freq=6, sampling_rate=30)
+def segment_motion_csv(file_path , data_type, wrist_joints , ankle_joints, filtering ):
+
+
+    if filtering:  # apply butter filter
+        motion_df = pd.read_csv(file_path)
+        smoothed_motion_df = filter_motion_data(motion_df, cutoff_freq=6, sampling_rate=30)
+    else:
+        smoothed_motion_df = pd.read_csv(file_path) # no filter
 
 
     joint_speeds=0
@@ -1176,6 +1181,10 @@ def load_model_with_full_state(filename, num_segments=None, num_signals=None):
 
 def save_model_with_full_state(model, filename):
     """Save the model with all state information needed for exact reproduction"""
+
+    weights_array = torch.stack([w.detach() for w in model.weights]).numpy()
+    mps_array = torch.stack([mp.detach() for mp in model.MPs]).numpy()
+
     save_data = {
      
         "model_state_dict": model.state_dict(),
@@ -1186,16 +1195,18 @@ def save_model_with_full_state(model, filename):
         
         "kernel_width": model.kernel_width,
         "kernel_var": model.kernel_var,
-        
-        "resampling_matrix": {str(k): v for k, v in model.resampling_matrix.items()},
-        
+
+        "weights": weights_array,
+        "MPs": mps_array,
+
+        "resampling_matrix": {int(k): v.detach().numpy() for k, v in model.resampling_matrix.items()},
+
         "K": model.K,
         "invK": model.invK,
 
         "learn_curve": model.learn_curve if hasattr(model, 'learn_curve') else [],
         "VAF_curve": model.VAF_curve if hasattr(model, 'VAF_curve') else []
     }
-    
     # Save all the data
     torch.save(save_data, filename)
     

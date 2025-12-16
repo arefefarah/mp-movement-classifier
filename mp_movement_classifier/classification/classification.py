@@ -493,7 +493,7 @@ def main():
     # )
 
     motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=folder_path,
-                                                                             data_type="position")
+                                                                             data_type="position", filtering= False)
 
     # based on TMP code: the format of data=list(segment_data[signals,time])
     num_segments = len(processed_segments)

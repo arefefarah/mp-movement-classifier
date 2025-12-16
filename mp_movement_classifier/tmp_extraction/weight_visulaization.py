@@ -403,6 +403,162 @@ def vis_median_weights_movements(weights, motion_ids, motion_names_dict=None,sav
     print(f"✓ Saved {min(num_MPs, 10)} MP comparison plots to {save_dir}")
 
 
+def extract_and_save_avg_weights_for_motions(weights, motion_ids, save_dir, motion_names_dict=None):
+    """
+    Extract averaged weights for each motion type and save them
+
+    Args:
+        weights: numpy array of shape [num_segments, num_joints_coord, num_MPs]
+        motion_ids: array of motion IDs for each segment
+        save_dir: directory to save averaged weights
+        motion_names_dict: optional mapping of motion_id to motion_name
+
+    Returns:
+        avg_weights_dict: dictionary mapping motion_id to averaged weights
+    """
+    from pathlib import Path
+
+    Path(save_dir).mkdir(parents=True, exist_ok=True)
+
+    num_segments, num_joints_coord, num_MPs = weights.shape
+    unique_motions = np.unique(motion_ids)
+
+    avg_weights_dict = {}
+
+    for motion_id in unique_motions:
+        # Get all segments for this motion
+        mask = motion_ids == motion_id
+        motion_weights = weights[mask]  # [n_segments_this_motion, num_joints_coord, num_MPs]
+
+        # Average across segments
+        avg_weights = motion_weights.mean(axis=0)  # [num_joints_coord, num_MPs]
+        std_weights = motion_weights.std(axis=0)  # [num_joints_coord, num_MPs]
+
+        motion_name = motion_names_dict.get(motion_id,
+                                            f'Motion_{motion_id}') if motion_names_dict else f'Motion_{motion_id}'
+
+        # Save averaged weights
+        avg_weights_dict[motion_id] = {
+            'mean': avg_weights,
+            'std': std_weights,
+            'n_segments': mask.sum(),
+            'motion_name': motion_name
+        }
+
+        # Save to file
+        np.savez(
+            f"{save_dir}/avg_weights_{motion_name}.npz",
+            mean_weights=avg_weights,
+            std_weights=std_weights,
+            n_segments=mask.sum(),
+            motion_id=motion_id,
+            motion_name=motion_name
+        )
+
+        print(f"Motion {motion_id} ({motion_name}): averaged {mask.sum()} segments")
+
+    # # Save all averaged weights together
+    # np.savez(
+    #     f"{save_dir}/all_avg_weights.npz",
+    #     **{f"motion_{mid}": data['mean'] for mid, data in avg_weights_dict.items()},
+    #     motion_ids=unique_motions,
+    #     motion_names=[avg_weights_dict[mid]['motion_name'] for mid in unique_motions]
+    # )
+
+    return avg_weights_dict
+
+
+def reconstruct_from_weights(weights, MPs, segment_length, kernel_params, resampling_matrix=None):
+    """
+    Returns:
+        reconstructed_segment: numpy array of shape [num_joints, segment_length]
+    """
+    num_t_points = kernel_params['num_t_points']
+
+    # Compute weighted sum of MPs
+    # weights: [num_joints, num_MPs]
+    # MPs: [num_MPs, num_t_points]
+    # result: [num_joints, num_t_points]
+    weighted_mps = np.dot(weights, MPs)
+
+    # Resample to desired segment length
+    if segment_length == num_t_points:
+        # No resampling needed
+        reconstructed = weighted_mps
+    else:
+        # Need to resample
+        if resampling_matrix is None:
+            # Compute resampling matrix
+            kernel_var = kernel_params['kernel_var']
+            kernel_width = kernel_params['kernel_width']
+            invK = kernel_params['invK']
+
+            # Create kernel matrix for resampling
+            x_new = np.arange(segment_length) * (num_t_points / segment_length)
+            x_old = np.arange(num_t_points)
+
+            # RBF kernel
+            K_cross = kernel_var * np.exp(-0.5 * (np.subtract.outer(x_new, x_old)) ** 2 / (kernel_width ** 2))
+
+            # Resampling matrix
+            resampling_matrix = np.dot(K_cross, invK)
+
+        # Apply resampling: [num_joints, segment_length]
+        reconstructed = np.dot(weighted_mps, resampling_matrix.T)
+
+    return reconstructed
+
+
+def reconstruct_segments_with_avg_weights(model_path, avg_weights_dict, motion_id, segment_lengths):
+    """
+    Reconstruct multiple segments using averaged weights for a specific motion
+
+    Args:
+        model_path: path to saved model
+        avg_weights_dict: dictionary from extract_and_save_avg_weights_for_motions
+        motion_id: which motion's averaged weights to use
+        segment_lengths: list of segment lengths to generate
+
+    Returns:
+        reconstructed_segments: list of numpy arrays
+    """
+    # Load model
+    model = torch.load(model_path, map_location='cpu', weights_only=False)
+
+    # Extract necessary components
+    MPs = model['MPs']
+    kernel_params = {
+        'kernel_var': model['kernel_var'],
+        'kernel_width': model['kernel_width'],
+        'num_t_points': model['num_t_points'],
+        'K': model['K'],
+        'invK': model['invK']
+    }
+
+    # Get averaged weights for this motion
+    avg_weights = avg_weights_dict[motion_id]['mean']
+
+    # Get resampling matrices if available
+    # resampling_matrices = {int(k): v for k, v in model.get('resampling_matrix', {}).items()}
+    resampling_matrices = model['resampling_matrix']
+
+    # Reconstruct segments
+    reconstructed_segments = []
+    for seg_len in segment_lengths:
+        resampling_mat = resampling_matrices.get(seg_len, None)
+
+        reconstructed = reconstruct_from_weights(
+            weights=avg_weights,
+            MPs=MPs,
+            segment_length=seg_len,
+            kernel_params=kernel_params,
+            resampling_matrix=resampling_mat
+        )
+
+        reconstructed_segments.append(reconstructed)
+
+    return reconstructed_segments
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -427,49 +583,68 @@ def main():
     motion_id_to_name = load_motion_mapping(DEFAULT_MOTION_MAPPING)
 
     # model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"pos_filtered_mp_model_20_cutoff_3_tpoints_30")
-    model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"pymotion_filtered_position_mp_model_5")
+    model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"pymotion_position_mp_model_5")
     model_name = "mp_model_5_PC_tpoints_30"
 
     model_path = os.path.join(model_subdir,model_name)
 
     # extract weights form the model
     model_data = torch.load(model_path, map_location='cpu', weights_only=False)
+    # model_data = torch.load(model_path, map_location='cpu')
+    print(model_data.keys())
     weights_list = []
     idx = 0
-    while f"weights.{idx}" in model_data["model_state_dict"]:
-        weights_list.append(model_data["model_state_dict"][f"weights.{idx}"].numpy())
-        idx += 1
-    weights = np.stack(weights_list, axis=0)
+    # while f"weights.{idx}" in model_data["model_state_dict"]:
+    #     weights_list.append(model_data["model_state_dict"][f"weights.{idx}"].numpy())
+    #     idx += 1
+    # weights = np.stack(weights_list, axis=0)
+    weights = model_data['weights']
 
     args.bvh_dir = DEFAULT_DATA_DIR
     folder_path = "../../data/pymotion_position_csv_files"
-    motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=folder_path,data_type="position")
-
-    # Run analyses
-    print(f"\n{'=' * 70}")
-    print("MP Weights Across Movements".center(70))
-    print(f"{'=' * 70}")
-    output_dir = os.path.join(model_subdir,"weights_analysis")
-    compare_weights_across_movements(weights, segment_motion_ids,motion_id_to_name,
-                                     output_dir)
-    output_dir = os.path.join(output_dir, "median_weights")
-    vis_median_weights_movements(weights, segment_motion_ids,motion_id_to_name,
-                                     output_dir)
+    motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=folder_path,
+                                                                             data_type="position",
+                                                                             filtering=False)
 
     # print(f"\n{'=' * 70}")
-    # print("ANALYSIS 2: Coordinate Variance Among Joints".center(70))
+    # print("MP Weights Across Movements".center(70))
     # print(f"{'=' * 70}")
-    # variance_results = analyze_coordinate_variance(
-    #     weights, segment_motion_ids, motion_id_to_name,
-    #     coord_idx=1, save_dir=output_dir
-    # )
+    # output_dir = os.path.join(model_subdir,"weights_analysis")
+    # compare_weights_across_movements(weights, segment_motion_ids,motion_id_to_name,
+    #                                  output_dir)
+    # output_dir = os.path.join(output_dir, "median_weights")
+    # vis_median_weights_movements(weights, segment_motion_ids,motion_id_to_name,
+    #                                  output_dir)
 
-    # print(f"\n{'=' * 70}")
-    # print(f"ANALYSIS 3: Joint-Specific coordinate -Variance & Significance".center(70))
-    # print(f"{'=' * 70}")
-    # avg_vars, std_vars, f_stat, p_value = analyze_joint_coord_variance(
-    #     weights, segment_motion_ids, motion_id_to_name,coord_idx=1, save_dir=output_dir
-    # )
+    output_dir = os.path.join(model_subdir, "averaged_weights")
+    avg_weights_dict = extract_and_save_avg_weights_for_motions(
+        weights=weights,
+        motion_ids=segment_motion_ids,
+        save_dir=output_dir,
+        motion_names_dict=motion_id_to_name
+    )
+
+    motion_to_reconstruct = 5  # e.g., 'walking'
+    desired_lengths = [200, 60]  # Different segment lengths
+
+    reconstructed = reconstruct_segments_with_avg_weights(
+        model_path=model_path,
+        avg_weights_dict=avg_weights_dict,
+        motion_id=motion_to_reconstruct,
+        segment_lengths=desired_lengths
+    )
+
+    print(reconstructed[0].shape)
+    print(reconstructed[1].shape)
+    output = os.path.join(model_subdir, f"reconstructed_segment_motion_{motion_to_reconstruct}.npy")
+    np.save(output, reconstructed[0])
+    for i, seg in enumerate(reconstructed):
+        plt.figure(figsize=(12, 6))
+        for joint_idx in range(min(5, seg.shape[0])):
+            plt.plot(seg[joint_idx], label=f'Joint {joint_idx}')
+        plt.title(f'Reconstructed segment (length={desired_lengths[i]})')
+        plt.legend()
+        plt.show()
 
 if __name__ == "__main__":
     main()

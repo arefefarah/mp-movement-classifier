@@ -422,7 +422,7 @@ def extract_representations(model, dataloader, device='cuda'):
 def train_classifiers(X_train, y_train, X_test, y_test):
     """Train and compare multiple classifiers"""
     classifiers = {
-        'Random Forest': RandomForestClassifier(n_estimators=200, max_depth=10,
+        'Random Forest': RandomForestClassifier(n_estimators=100, max_depth=10,
                                                 random_state=42),
         'Logistic Regression': LogisticRegression(max_iter=1000, random_state=42),
         'SVM': SVC(kernel='rbf', random_state=42),
@@ -581,12 +581,12 @@ def analyze_variance_explained(representations):
 
 
 def main():
-    num_MPs = 20
-    model_dir = os.path.join("./../../results/tmp_configs", f"pymotion_quaternion_mp_model_{num_MPs}")
+    num_MPs = 5
+    model_dir = os.path.join("./../../results/tmp_configs", f"pymotion_position_mp_model_{num_MPs}")
     out_dir = os.path.join(model_dir, "autoencoder_analysis")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    DATA_DIR = "./../../data/pymotion_quat_csv_files"
+    DATA_DIR = "./../../data/pymotion_position_csv_files"
     MODEL_SAVE_DIR = Path(out_dir) / 'models'
     MODEL_SAVE_DIR.mkdir(exist_ok=True)
     RESULTS_DIR = Path(out_dir) / 'results'
@@ -600,7 +600,7 @@ def main():
     print("\n[1/7] Loading motion data...")
     motion_ids, processed_segments, segment_motion_ids = process_motion_data(
         folder_path=DATA_DIR,
-        data_type='quaternion',
+        data_type='position',
     )
     #flip segments
     all_segmants = []
