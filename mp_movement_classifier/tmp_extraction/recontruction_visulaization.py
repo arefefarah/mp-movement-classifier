@@ -78,7 +78,7 @@ def compute_joint_speed(motion_data, joints, frame_time, wrist_joints=['LeftWris
             joint_speeds += joint_speed
 
     return joint_speeds
-#
+
 def visualize_motion_with_segmentation(file_name,csv_file_path, wrist_joints , ankle_joints,save_dir):
 
     motion_df = pd.read_csv(csv_file_path)
@@ -91,8 +91,7 @@ def visualize_motion_with_segmentation(file_name,csv_file_path, wrist_joints , a
     print(f"len of segments: {len(segments)}")
     boundary_frames = [boundaries[0][0]] + [b[1] for b in boundaries]
 
-
-    # # Create time vector
+    # Create time vector
     time_vector = np.arange(motion_df.shape[0]) * frame_time
 
     target_joints=["LWrist","LKnee","LElbow","LAnkle","Neck","LShoulder"]

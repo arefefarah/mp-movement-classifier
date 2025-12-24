@@ -342,121 +342,143 @@ def main():
     model_dir = os.path.join("./../../results/tmp_configs", f"pymotion_position_mp_model_20")
     figures_dir = os.path.join("./../../results/segmentation_analysis")
     Path(figures_dir).mkdir(exist_ok=True)
-    # for i in range(9):
-    filename = f"subject_1_motion_02"
-    csv_file = f"../../data/pymotion_quat_csv_files/{filename}.csv"
-    bvh_reference = f"../../data/bvh_files/{filename}.bvh"
-    MAPPING_FILE = "../../data/common_motion_mapping.json"
-    motion_id_str = filename.split('_')[-1]
-    with open(MAPPING_FILE, 'r') as f:
-            data = json.load(f)
-            motion_mapping = data["mapping"]
-    id_to_motion_name = {id_val: motion_name for motion_name, id_val in motion_mapping.items()}
-    motion_name = id_to_motion_name.get(int(motion_id_str))
-    print(motion_name)
 
-    bvh = BVH()
-    bvh.load(bvh_reference)  # load euler angle rep from bvh data
-    local_rotations, local_positions, parents, offsets, _, _ = bvh.get_data()
-    global_positions = local_positions[:, 0, :]  # root joint
-    pos, rotmats = fk(local_rotations, global_positions, offsets, parents)
+    path = Path("../../data/bvh_files")
+    MAPPING_FILE = "../../data/common_motion_mapping.json"
+    with open(MAPPING_FILE, 'r') as f:
+        data = json.load(f)
+        motion_mapping = data["mapping"]
+    id_to_motion_name = {id_val: motion_name for motion_name, id_val in motion_mapping.items()}
+
+    for bvh_reference in path.glob("*.bvh"):
+        filename = bvh_reference.stem
+        print(filename)
+        # filename = bvh_reference.name.replace(".bvh", ".csv")
+        # csv_file = f"../../data/pymotion_quat_csv_files/{filename}.csv"
+        motion_id_str = filename.split('_')[-1]
+        motion_name = id_to_motion_name.get(int(motion_id_str))
+        print(motion_name)
+
+        bvh = BVH()
+        bvh.load(bvh_reference)  # load euler angle rep from bvh data
+        local_rotations, local_positions, parents, offsets, _, _ = bvh.get_data()
+        global_positions = local_positions[:, 0, :]  # root joint
+        pos, rotmats = fk(local_rotations, global_positions, offsets, parents)
 
     # converter = H36MConverter() use converter to save csv file in future
     # Create the DataFrame for positions
-    columns = []
-    data = []
-    for joint_idx, joint_name in enumerate(joint_names):
-        columns.append(joint_name + "_x")
-        columns.append(joint_name + "_y")
-        columns.append(joint_name + "_z")
-
-    for frame, pose in enumerate(pos):
-        data_frame = []
+        columns = []
+        data = []
         for joint_idx, joint_name in enumerate(joint_names):
-            data_frame.extend(pose[joint_idx, :])
-        data.append(data_frame)
+            columns.append(joint_name + "_x")
+            columns.append(joint_name + "_y")
+            columns.append(joint_name + "_z")
 
-    df = pd.DataFrame(data, columns=columns)
-    csv_files_dir = Path(figures_dir) / "position_csv_files"
-    os.makedirs(csv_files_dir, exist_ok=True)
-    output_path = os.path.join(Path(csv_files_dir),f"{filename}.csv")
-    df.to_csv(output_path, index=False)
-    print(f"file saved to {output_path}")
+        for frame, pose in enumerate(pos):
+            data_frame = []
+            for joint_idx, joint_name in enumerate(joint_names):
+                data_frame.extend(pose[joint_idx, :])
+            data.append(data_frame)
 
-    segment_save_dir = Path(figures_dir) / "segments_animation_filtered" / motion_name
-    os.makedirs(segment_save_dir, exist_ok=True)
+        df = pd.DataFrame(data, columns=columns)
+        csv_files_dir = Path(figures_dir) / "position_csv_files"
+        os.makedirs(csv_files_dir, exist_ok=True)
+        output_path = os.path.join(Path(csv_files_dir),f"{filename}.csv")
+        df.to_csv(output_path, index=False)
+        print(f"file saved to {output_path}")
 
-    # use previous segmentation for this position csv file
-    segments, boundaries = visualize_motion_with_segmentation(filename,
-                                                              csv_file_path = output_path,
-                                                              wrist_joints=['LWrist', 'RWrist'],
-                                                              ankle_joints=['LAnkle', 'RAnkle'],
-                                                              save_dir=segment_save_dir)
+        animations_save_dir = Path(figures_dir) / "all_motions_animation" / motion_name
+        os.makedirs(animations_save_dir, exist_ok=True)
 
-    for i, boundary in enumerate(boundaries):
         viewer = Viewer(use_reloader=True, xy_size=5, framerate=30)
         Viewer.run = run_patched
-        viewer.add_skeleton(pos[boundary[0] or 0:boundary[1], :, :], parents)
+        viewer.add_skeleton(pos[:, :, :], parents)
         viewer.add_floor()
-        # viewer.run()
-
         print("Generating GIF... this may take a moment.")
         frames = []
         for j in range(viewer.max_frames):
             fig = viewer._create_figure(frame=j)
             img_bytes = fig.to_image(format="png", width=800, height=600, scale=2)
             frames.append(imageio.imread(img_bytes))
-            if j % 10 == 0:
+            if j % 20 == 0:
                 print(f"Processed frame {j}/{viewer.max_frames}")
-        imageio.mimsave(segment_save_dir/f'seg{i}_{filename}.gif', frames, fps = 30, loop=0)
+        imageio.mimsave(animations_save_dir/f'{filename}.gif', frames, fps = 30, loop=0)
         print("Saved animation")
+
+    # segment_save_dir = Path(figures_dir) / "segments_animation_filtered" / motion_name
+    # os.makedirs(segment_save_dir, exist_ok=True)
+    #
+    # # use previous segmentation for this position csv file
+    # segments, boundaries = visualize_motion_with_segmentation(filename,
+    #                                                           csv_file_path = output_path,
+    #                                                           wrist_joints=['LWrist', 'RWrist'],
+    #                                                           ankle_joints=['LAnkle', 'RAnkle'],
+    #                                                           save_dir=segment_save_dir)
+
+    # for i, boundary in enumerate(boundaries):
+    #     viewer = Viewer(use_reloader=True, xy_size=5, framerate=30)
+    #     Viewer.run = run_patched
+    #     viewer.add_skeleton(pos[boundary[0] or 0:boundary[1], :, :], parents)
+    #     viewer.add_floor()
+    #     # viewer.run()
+    #
+    #     print("Generating GIF... this may take a moment.")
+    #     frames = []
+    #     for j in range(viewer.max_frames):
+    #         fig = viewer._create_figure(frame=j)
+    #         img_bytes = fig.to_image(format="png", width=800, height=600, scale=2)
+    #         frames.append(imageio.imread(img_bytes))
+    #         if j % 10 == 0:
+    #             print(f"Processed frame {j}/{viewer.max_frames}")
+    #     imageio.mimsave(segment_save_dir/f'seg{i}_{filename}.gif', frames, fps = 30, loop=0)
+    #     print("Saved animation")
 
 ## plot trajectories for all positions, axis-angle rep, quaternion rep
 
-    plt.plot(pos[:, 2, 0])
-    plt.plot(pos[:, 2, 1])
-    plt.plot(pos[:, 2, 2])
-    plt.title("Position representation")
-    plt.legend(["x","y","z"])
-    plt.xlabel("Frame")
-    plt.savefig(os.path.join(segment_save_dir, "position_trajectory.png"))
-    plt.close()
-
-    # ===== Convert to Quaternions =====
-    T, N, _, _ = rotmats.shape
-    quaternions = np.zeros((T, N, 4))  # (x, y, z, w) format
-    for t in range(T):
-        for j in range(N):
-            rot = R.from_matrix(rotmats[t, j])
-            quaternions[t, j] = rot.as_quat()  # Returns (x, y, z, w)
-
-    print(f"Quaternions shape: {quaternions.shape}")  # (T, N, 4)
-    plt.plot(quaternions[:, 2, 0])
-    plt.plot(quaternions[:, 2, 1])
-    plt.plot(quaternions[:, 2, 2])
-    plt.plot(quaternions[:, 2, 3])
-    plt.title("Quaternions representation")
-    plt.legend(["x","y","z","w"])
-    plt.xlabel("Frame")
-    plt.savefig(os.path.join(segment_save_dir,"quaternions_trajectory.png"))
-    plt.close()
-
-    # ===== Convert to Axis-Angle =====
-    axis_angles = np.zeros((T, N, 3))  # Scaled axis-angle representation
-    for t in range(T):
-        for j in range(N):
-            rot = R.from_matrix(rotmats[t, j])
-            axis_angles[t, j] = rot.as_rotvec()  # Returns axis * angle
-
-    print(f"Axis-angle shape: {axis_angles.shape}")  # (T, N, 3)
-    plt.plot(axis_angles[:, 2, 1])
-    plt.plot(axis_angles[:, 2, 1])
-    plt.plot(axis_angles[:, 2, 2])
-    plt.title("Axis-angle representation")
-    plt.legend(["x","y","z"])
-    plt.xlabel("Frame")
-    plt.savefig(os.path.join(segment_save_dir,"axis_angles_trajectory.png"))
-    plt.close()
+    # plt.plot(pos[:, 2, 0])
+    # plt.plot(pos[:, 2, 1])
+    # plt.plot(pos[:, 2, 2])
+    # plt.title("Position representation")
+    # plt.legend(["x","y","z"])
+    # plt.xlabel("Frame")
+    # plt.savefig(os.path.join(segment_save_dir, "position_trajectory.png"))
+    # plt.close()
+    #
+    # # ===== Convert to Quaternions =====
+    # T, N, _, _ = rotmats.shape
+    # quaternions = np.zeros((T, N, 4))  # (x, y, z, w) format
+    # for t in range(T):
+    #     for j in range(N):
+    #         rot = R.from_matrix(rotmats[t, j])
+    #         quaternions[t, j] = rot.as_quat()  # Returns (x, y, z, w)
+    #
+    # print(f"Quaternions shape: {quaternions.shape}")  # (T, N, 4)
+    # plt.plot(quaternions[:, 2, 0])
+    # plt.plot(quaternions[:, 2, 1])
+    # plt.plot(quaternions[:, 2, 2])
+    # plt.plot(quaternions[:, 2, 3])
+    # plt.title("Quaternions representation")
+    # plt.legend(["x","y","z","w"])
+    # plt.xlabel("Frame")
+    # plt.savefig(os.path.join(segment_save_dir,"quaternions_trajectory.png"))
+    # plt.close()
+    #
+    # # ===== Convert to Axis-Angle =====
+    # axis_angles = np.zeros((T, N, 3))  # Scaled axis-angle representation
+    # for t in range(T):
+    #     for j in range(N):
+    #         rot = R.from_matrix(rotmats[t, j])
+    #         axis_angles[t, j] = rot.as_rotvec()  # Returns axis * angle
+    #
+    # print(f"Axis-angle shape: {axis_angles.shape}")  # (T, N, 3)
+    # plt.plot(axis_angles[:, 2, 1])
+    # plt.plot(axis_angles[:, 2, 1])
+    # plt.plot(axis_angles[:, 2, 2])
+    # plt.title("Axis-angle representation")
+    # plt.legend(["x","y","z"])
+    # plt.xlabel("Frame")
+    # plt.savefig(os.path.join(segment_save_dir,"axis_angles_trajectory.png"))
+    # plt.close()
 
     # boundary = boundaries[0]
     # # it doeasnt work when boundary[0] == 0 so we put or 0  to make it true
