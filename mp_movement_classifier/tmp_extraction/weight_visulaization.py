@@ -8,7 +8,6 @@ This script integrates with your BVH processing pipeline to:
 3. Analyze variance of coordinates among joints
 4. Test statistical significance
 
-Author: Adapted for BVH-based TMP model analysis
 """
 
 import numpy as np
