@@ -1,26 +1,19 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
 import os
-import torch
 from pathlib import Path
-from scipy import stats
 import json
-import argparse
 import pandas as pd
-import sys
 
 from mp_movement_classifier.classification.classification import data_dir
 from mp_movement_classifier.utils.utils import read_bvh_files, process_bvh_data,process_motion_data
-
-from mp_movement_classifier.utils.utils import calculate_angular_velocity_quat,segment_motion_csv
 
 data_dir = "../../data/pymotion_position_csv_files"
 
 path = Path("../../data/bvh_files")
 csv_files = list(path.glob("*.csv"))
-filename = "subject_16_motion_02.csv"
+filename = "subject_11_motion_14.csv"
 csv_file_path = Path(data_dir) / filename
 
 motion_df = pd.read_csv(csv_file_path)

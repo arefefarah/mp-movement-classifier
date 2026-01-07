@@ -262,6 +262,58 @@ def calculate_joint_linear_speed(positions, frame_rate=30):
 
     return linear_speeds
 
+# def process_motion_data(folder_path,data_type,filtering ):
+#     """
+#     Apply Butterworth filter and segmentation to BVH motion data
+#     """
+#     motion_ids = []
+#     processed_segments = []
+#     segment_motion_ids = []
+#     frame_time = 1/30
+#     joints = JOINT_NAMES
+#
+#     csv_files = [f for f in os.listdir(folder_path) if f.lower().endswith('.csv')]
+#     pattern = re.compile(r'motion_(\d+)')
+#
+#     for csv_file in csv_files:
+#         motion_data = []
+#         file_path = os.path.join(folder_path, csv_file)
+#         match = pattern.search(csv_file)
+#         if match:
+#             motion_id = int(match.group(1))
+#             with open(file_path, 'r', encoding='utf-8') as f:
+#                 motion_ids.append(motion_id)
+#                 print(f"Processing {file_path} with motion ID {motion_id}")
+#
+#                 # motion_array = motion_df.to_numpy()
+#                 # motion_data.append(motion_array)
+#
+#                 # Apply temporal segmentation
+#                 segments, boundaries = segment_motion_csv(
+#                     file_path,
+#                     data_type=data_type,
+#                     wrist_joints=['LWrist', 'RWrist'],
+#                     ankle_joints=['LAnkle', 'RAnkle'],
+#                     filtering= filtering
+#                 )
+#
+#                 # print(f"   ✅ Found {len(segments)} motion segments")
+#                 min_segment_length = 10
+#                 for segment in segments:
+#                     processed_segments.append(segment.T)  # Transpose to [signals, time]
+#                     segment_motion_ids.append(motion_id)
+#
+#
+#                 # pass without segmentation
+#                 # processed_segments.append(motion_array.T)# the format of each segment should be [signals,time
+#                 # segment_motion_ids.append(motion_id)
+#                 # print("\n#### without segmentation")
+#                 # print("segment first: ", motion_array[:, 10])
+#
+#     if not processed_segments:
+#         raise ValueError("No segments could be processed")
+#
+#     return motion_ids,processed_segments, segment_motion_ids
 def process_motion_data(folder_path,data_type,filtering ):
     """
     Apply Butterworth filter and segmentation to BVH motion data
@@ -275,40 +327,31 @@ def process_motion_data(folder_path,data_type,filtering ):
     csv_files = [f for f in os.listdir(folder_path) if f.lower().endswith('.csv')]
     pattern = re.compile(r'motion_(\d+)')
 
-    for csv_file in csv_files:
+    Segments_index = "../../results/segments_index.json"
+    with open(Segments_index, 'r') as f:
+        data = json.load(f)
+
+
+    for key in data.keys():
+        csv_file =  f"{key}.csv"
         motion_data = []
         file_path = os.path.join(folder_path, csv_file)
+        motion_df = pd.read_csv(file_path)
         match = pattern.search(csv_file)
         if match:
             motion_id = int(match.group(1))
             with open(file_path, 'r', encoding='utf-8') as f:
                 motion_ids.append(motion_id)
                 print(f"Processing {file_path} with motion ID {motion_id}")
+                boundaries = data[key]
+                segments = []
+                for boundary in boundaries:
+                    seg_df = motion_df.iloc[boundary[0]:boundary[1], :]
+                    segments.append(seg_df.to_numpy())
 
-                # motion_array = motion_df.to_numpy()
-                # motion_data.append(motion_array)
-
-                # Apply temporal segmentation
-                segments, boundaries = segment_motion_csv(
-                    file_path,
-                    data_type=data_type,
-                    wrist_joints=['LWrist', 'RWrist'],
-                    ankle_joints=['LAnkle', 'RAnkle'],
-                    filtering= filtering
-                )
-
-                # print(f"   ✅ Found {len(segments)} motion segments")
-                min_segment_length = 10
                 for segment in segments:
                     processed_segments.append(segment.T)  # Transpose to [signals, time]
                     segment_motion_ids.append(motion_id)
-
-
-                # pass without segmentation
-                # processed_segments.append(motion_array.T)# the format of each segment should be [signals,time
-                # segment_motion_ids.append(motion_id)
-                # print("\n#### without segmentation")
-                # print("segment first: ", motion_array[:, 10])
 
     if not processed_segments:
         raise ValueError("No segments could be processed")

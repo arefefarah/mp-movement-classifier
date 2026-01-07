@@ -473,7 +473,7 @@ def main():
     model_name = f"mp_model_{num_MPs}_cutoff_{cutoff_freq}"
     # model_dir = os.path.join(config.SAVING_DIR, f"mp_model_{num_MPs}_cutoff_{cutoff_freq}_tpoints_{tpoints}")
     # model_dir = os.path.join(config.SAVING_DIR, f"pos_filtered_mp_model_20_cutoff_3_tpoints_30")
-    model_dir = os.path.join(config.SAVING_DIR, f"pymotion_filtered_position_mp_model_{num_MPs}")
+    model_dir = os.path.join(config.SAVING_DIR, f"new_seg_pymotion_position_mp_model_{num_MPs}")
     model_file = os.path.join(model_dir, f"mp_model_{num_MPs}_PC_tpoints_30")
 
     # model_file = os.path.join(model_dir, f"mp_model_{num_MPs}_PC_init_cutoff_{cutoff_freq}_tpoints_{tpoints}")
@@ -507,7 +507,7 @@ def main():
 
     segment_lengths = np.array([segment.shape[1] for segment in processed_segments])
     # print(f"shape of processed data :",processed_data[0].shape)
-    recon_data = model.predict(segment_lengths, as_numpy=True)
+    # recon_data = model.predict(segment_lengths, as_numpy=True)
     # print(f"shape of reconstructed data :", recon_data[0].shape)
 
     # feature space
