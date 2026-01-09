@@ -582,7 +582,7 @@ def main():
     motion_id_to_name = load_motion_mapping(DEFAULT_MOTION_MAPPING)
 
     # model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"pos_filtered_mp_model_20_cutoff_3_tpoints_30")
-    model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"pymotion_position_mp_model_5")
+    model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"new_seg_pymotion_position_mp_model_5")
     model_name = "mp_model_5_PC_tpoints_30"
 
     model_path = os.path.join(model_subdir,model_name)

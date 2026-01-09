@@ -582,7 +582,7 @@ def analyze_variance_explained(representations):
 
 def main():
     num_MPs = 5
-    model_dir = os.path.join("./../../results/tmp_configs", f"pymotion_position_mp_model_{num_MPs}")
+    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_pymotion_position_mp_model_{num_MPs}")
     out_dir = os.path.join(model_dir, "autoencoder_analysis")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -601,6 +601,7 @@ def main():
     motion_ids, processed_segments, segment_motion_ids = process_motion_data(
         folder_path=DATA_DIR,
         data_type='position',
+        filtering=False
     )
     #flip segments
     all_segmants = []
@@ -731,45 +732,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-#
-# def autoencoder()
-#
-# def train_autoencoder(data,model):
-#     def main() -> None:
-#
-#         # Fixed configuration (no CLI for these)
-#         data_dir = DEFAULT_DATA_DIR
-#         tail_window = DEFAULT_TAIL_WINDOW
-#         model_name_suffix = MODEL_NAME_SUFFIX
-#
-#         motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=data_dir)
-#
-#
-#         process_data ()
-#         becasue segments does not have same length to be used for auto encode. we need to do padding to make sure all segments have s=xonstant length but keep segment motion ids as they are for using for classification
-#
-#
-#         # Initialize or load model
-#         model =
-#
-#         train_and_save_model(
-#             )
-#
-#
-#         evaluate_and_plot(
-#             visulaize(rep): mapping
-#         from input to
-#         output
-#         of
-#         train_autoencoder(compare
-#         this
-#         two in terms
-#         of
-#         variance
-#         explained)
-#
-#         )
-#
-#
-#     if __name__ == "__main__":
-#         main()

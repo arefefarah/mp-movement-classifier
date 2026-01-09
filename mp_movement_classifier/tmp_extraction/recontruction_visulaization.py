@@ -159,7 +159,7 @@ def main():
         'Spine', 'Thorax', 'Neck',
         'LShoulder', 'LElbow', 'LWrist', 'RShoulder', 'RElbow', 'RWrist'
     ]
-    model_dir = os.path.join("./../../results/tmp_configs", f"pymotion_position_mp_model_5")
+    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_pymotion_position_mp_model_5")
 
     output_path = os.path.join(model_dir, "reconstruction")
     Path(output_path).mkdir(exist_ok=True)

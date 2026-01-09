@@ -310,8 +310,8 @@ def classify_motion_types(X, y, out_dir):
     )
 
     # Train a Random Forest classifier
-    classifier = RandomForestClassifier(n_estimators=100, random_state=42)
-    classifier = SVC(kernel='rbf', random_state=42)
+    # classifier = RandomForestClassifier(n_estimators=100, random_state=42)
+    classifier = SVC(random_state=42)
     classifier.fit(X_train, y_train)
 
     # Make predictions
@@ -676,7 +676,7 @@ def _plot_distance_matrix(results, save_dir):
 def main():
 
     num_MPs = 5
-    model_dir = os.path.join("./../../results/tmp_configs", f"pymotion_position_mp_model_{num_MPs}")
+    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_pymotion_position_mp_model_{num_MPs}")
     out_dir = os.path.join(model_dir, "legandre_analysis")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

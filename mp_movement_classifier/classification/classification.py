@@ -17,6 +17,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
+from sklearn.manifold import TSNE
 from sklearn.neural_network import MLPClassifier
 from sklearn.model_selection import cross_val_score
 from sklearn.decomposition import PCA  # <-- ADDED THIS
@@ -197,6 +198,7 @@ def compare_classifiers(X_scaled, y, out_dir: Path,
 
 def analyze_feature_pca(
         X: np.ndarray,
+        y: np.array,
         out_dir: Path,
         max_components: int = None,
         feature_names: list = None
@@ -394,20 +396,29 @@ def analyze_feature_pca(
     plt.close()
     print(f"  ✓ Saved: {loadings_plot_path}")
 
-    # --- Plot 5: 2D PCA Projection ---
-    if pca.n_components_ >= 2:
-        fig, ax = plt.subplots(figsize=(10, 8))
-        scatter = ax.scatter(X_pca[:, 0], X_pca[:, 1], alpha=0.6, s=50, c='steelblue')
-        ax.set_xlabel(f'PC1 ({explained_variance_ratio[0]:.2%} variance)', fontsize=12)
-        ax.set_ylabel(f'PC2 ({explained_variance_ratio[1]:.2%} variance)', fontsize=12)
-        ax.set_title('2D PCA Projection', fontsize=14, fontweight='bold')
-        ax.grid(True, alpha=0.3, linestyle='--')
 
-        plt.tight_layout()
-        projection_path = out_dir / "pca_2d_projection.png"
-        plt.savefig(projection_path, dpi=300, bbox_inches='tight')
-        plt.close()
-        print(f"  ✓ Saved: {projection_path}")
+    plt.figure(figsize=(10, 8))
+    scatter = plt.scatter(X_pca[:, 0], X_pca[:, 1], c=y, cmap='viridis', alpha=0.8)
+
+    plt.colorbar(scatter, label='Motion Type')
+
+    plt.xlabel(f'PC1 (Explained Variance: {explained_variance_ratio[0]:.2f})')
+    plt.ylabel(f'PC2 (Explained Variance: {explained_variance_ratio[1]:.2f})')
+    plt.title('2D PCA Projection')
+
+    unique_motions = np.unique(y)
+    handles = [plt.Line2D([0], [0], marker='o', color='w',
+                          markerfacecolor=plt.cm.viridis(i / len(unique_motions)),
+                          markersize=10) for i in range(len(unique_motions))]
+    plt.legend(handles, unique_motions, title='Motion Types')
+
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    projection_path = out_dir / "pca_2d_projection.png"
+    plt.savefig(projection_path, dpi=300)
+    plt.close()
+    print(f"  ✓ Saved: {projection_path}")
+
 
     results = {
         'pca_model': pca,
@@ -464,6 +475,37 @@ def analyze_feature_pca(
     return results
 
 
+def visualize_with_tsne(X, y, out_dir):
+    # Apply t-SNE
+    tsne = TSNE(n_components=2, random_state=42, perplexity=min(30, len(X) - 1))
+    X_tsne = tsne.fit_transform(X)
+
+    # Create a scatter plot
+    plt.figure(figsize=(10, 8))
+    scatter = plt.scatter(X_tsne[:, 0], X_tsne[:, 1], c=y, cmap='viridis', alpha=0.8)
+
+    # Add a colorbar
+    plt.colorbar(scatter, label='Motion Type')
+
+    # Add labels and title
+    plt.xlabel('t-SNE Dimension 1')
+    plt.ylabel('t-SNE Dimension 2')
+    plt.title('t-SNE of TMP model features')
+
+    # Add legend for unique motion types
+    unique_motions = np.unique(y)
+    handles = [plt.Line2D([0], [0], marker='o', color='w',
+                          markerfacecolor=plt.cm.viridis(i / len(unique_motions)),
+                          markersize=10) for i in range(len(unique_motions))]
+    plt.legend(handles, unique_motions, title='Motion Types')
+
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    out_path = Path(out_dir) / 'tsne_visualization.png'
+    plt.savefig(out_path, dpi=150)
+
+    return tsne
+
 def main():
     global data_dir, model_path
 
@@ -471,26 +513,13 @@ def main():
     cutoff_freq = 3.0
     tpoints = 30
     model_name = f"mp_model_{num_MPs}_cutoff_{cutoff_freq}"
-    # model_dir = os.path.join(config.SAVING_DIR, f"mp_model_{num_MPs}_cutoff_{cutoff_freq}_tpoints_{tpoints}")
-    # model_dir = os.path.join(config.SAVING_DIR, f"pos_filtered_mp_model_20_cutoff_3_tpoints_30")
     model_dir = os.path.join(config.SAVING_DIR, f"new_seg_pymotion_position_mp_model_{num_MPs}")
-    model_file = os.path.join(model_dir, f"mp_model_{num_MPs}_PC_tpoints_30")
-
-    # model_file = os.path.join(model_dir, f"mp_model_{num_MPs}_PC_init_cutoff_{cutoff_freq}_tpoints_{tpoints}")
-    # model_file = os.path.join(model_dir, "mp_model_20_PC_init_cutoff_3_tpoints_30")
+    model_file = os.path.join(model_dir, f"mp_model_{num_MPs}_PC_tpoints_{tpoints}")
 
     out_dir = os.path.join(model_dir, "classification")
     model_path = model_file
 
     folder_path = "../../data/pymotion_position_csv_files"
-    # bvh_data, motion_ids = read_bvh_files(folder_path)
-    #
-    # # Process data according to paper specifications
-    # processed_data, segment_motion_ids = process_bvh_data(
-    #     data_dir = folder_path,
-    #     motion_ids = motion_ids,
-    #     cutoff_freq= cutoff_freq,
-    # )
 
     motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=folder_path,
                                                                              data_type="position", filtering= False)
@@ -516,10 +545,6 @@ def main():
     print(f"Feature matrix shape: {X.shape}")
     print(f"Label array shape: {y.shape}")
     print(f"Unique motion IDs: {np.unique(y)}")
-
-    # ============================================================
-    # NEW: PCA ANALYSIS ON FEATURE MATRIX
-    # ============================================================
     print("\n" + "=" * 70)
     print("PERFORMING PCA ANALYSIS ON FEATURE MATRIX")
     print("=" * 70)
@@ -533,10 +558,16 @@ def main():
     # Run comprehensive PCA analysis
     pca_results = analyze_feature_pca(
         X=X,
+        y=y,
         out_dir=Path(out_dir),
         max_components=400,  # Analyze all possible components
         feature_names=feature_names
     )
+
+    tsne = visualize_with_tsne(
+        X=X,
+        y=y,
+        out_dir=Path(out_dir))
 
     # OPTIONAL: Use PCA features for classification
     # Uncomment the following lines if you want to classify using reduced features

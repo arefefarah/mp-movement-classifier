@@ -333,6 +333,7 @@ def calculate_joint_angular_speed(rotation_vectors, frame_rate=30):
     return angular_speeds
 
 
+
 def main():
     joint_names = [
         'Hip', 'RHip', 'RKnee', 'RAnkle', 'LHip', 'LKnee', 'LAnkle',
@@ -350,60 +351,103 @@ def main():
         motion_mapping = data["mapping"]
     id_to_motion_name = {id_val: motion_name for motion_name, id_val in motion_mapping.items()}
 
+    finished_motions = [
+        "subject_16_motion_02", "subject_23_motion_02", "subject_42_motion_02", "subject_45_motion_02",
+        "subject_49_motion_02", "subject_62_motion_02", "subject_69_motion_02", "subject_2_motion_05",
+        "subject_9_motion_05", "subject_17_motion_05", "subject_20_motion_05", "subject_48_motion_05",
+        "subject_54_motion_05", "subject_59_motion_05", "subject_82_motion_05", "subject_1_motion_18",
+        "subject_13_motion_18", "subject_22_motion_18", "subject_39_motion_18", "subject_49_motion_18",
+        "subject_55_motion_18", "subject_59_motion_18", "subject_61_motion_18", "subject_87_motion_18",
+        "subject_8_motion_17", "subject_12_motion_17", "subject_37_motion_17", "subject_42_motion_17",
+        "subject_52_motion_17", "subject_77_motion_17", "subject_2_motion_11", "subject_34_motion_11",
+        "subject_39_motion_11", "subject_42_motion_11", "subject_49_motion_11", "subject_51_motion_11",
+        "subject_53_motion_11", "subject_76_motion_11", "subject_35_motion_09", "subject_43_motion_09",
+        "subject_88_motion_09", "subject_5_motion_08", "subject_10_motion_08", "subject_20_motion_08",
+        "subject_21_motion_08", "subject_23_motion_08", "subject_29_motion_08", "subject_34_motion_08",
+        "subject_35_motion_08", "subject_36_motion_08", "subject_63_motion_08", "subject_70_motion_08",
+        "subject_82_motion_08", "subject_90_motion_08", "subject_8_motion_03", "subject_21_motion_03",
+        "subject_25_motion_03", "subject_36_motion_03", "subject_38_motion_03", "subject_48_motion_03",
+        "subject_52_motion_03", "subject_59_motion_03", "subject_64_motion_03", "subject_76_motion_03",
+        "subject_9_motion_00", "subject_19_motion_00", "subject_32_motion_00", "subject_52_motion_00",
+        "subject_57_motion_00", "subject_83_motion_00", "subject_16_motion_06", "subject_39_motion_06",
+        "subject_41_motion_06", "subject_55_motion_06", "subject_60_motion_06", "subject_70_motion_06",
+        "subject_75_motion_06", "subject_10_motion_01", "subject_15_motion_01", "subject_25_motion_01",
+        "subject_29_motion_01", "subject_30_motion_01", "subject_47_motion_01", "subject_54_motion_01",
+        "subject_63_motion_01", "subject_70_motion_01", "subject_10_motion_12", "subject_36_motion_12",
+        "subject_53_motion_12", "subject_56_motion_12", "subject_59_motion_12", "subject_60_motion_12",
+        "subject_76_motion_12", "subject_77_motion_12", "subject_81_motion_12", "subject_8_motion_19",
+        "subject_17_motion_19", "subject_49_motion_19", "subject_63_motion_19", "subject_65_motion_19",
+        "subject_2_motion_16", "subject_18_motion_16", "subject_24_motion_16", "subject_29_motion_16",
+        "subject_32_motion_16", "subject_33_motion_16", "subject_34_motion_16", "subject_44_motion_16",
+        "subject_63_motion_16", "subject_4_motion_07", "subject_10_motion_07", "subject_11_motion_07",
+        "subject_13_motion_07", "subject_27_motion_07", "subject_36_motion_07", "subject_41_motion_07",
+        "subject_47_motion_07", "subject_2_motion_13", "subject_5_motion_13", "subject_17_motion_13",
+        "subject_20_motion_13", "subject_34_motion_13", "subject_49_motion_13", "subject_57_motion_13",
+        "subject_5_motion_20", "subject_16_motion_20", "subject_18_motion_20", "subject_31_motion_20",
+        "subject_46_motion_20", "subject_52_motion_20", "subject_56_motion_20", "subject_68_motion_20",
+        "subject_81_motion_20", "subject_89_motion_20", "subject_13_motion_10", "subject_19_motion_10",
+        "subject_28_motion_10", "subject_37_motion_10", "subject_38_motion_10", "subject_43_motion_10",
+        "subject_56_motion_10", "subject_75_motion_10", "subject_2_motion_14", "subject_11_motion_14",
+        "subject_12_motion_14", "subject_15_motion_14", "subject_19_motion_14", "subject_42_motion_14",
+        "subject_54_motion_14", "subject_55_motion_14", "subject_60_motion_14", "subject_71_motion_14",
+        "subject_90_motion_14", "subject_4_motion_04", "subject_9_motion_04", "subject_12_motion_04",
+        "subject_21_motion_04", "subject_24_motion_04", "subject_25_motion_04", "subject_42_motion_04",
+        "subject_62_motion_04", "subject_63_motion_04", "subject_70_motion_04", "subject_82_motion_04"
+    ]
     for bvh_reference in path.glob("*.bvh"):
         filename = bvh_reference.stem
-        print(filename)
-        # filename = bvh_reference.name.replace(".bvh", ".csv")
-        # csv_file = f"../../data/pymotion_quat_csv_files/{filename}.csv"
-        motion_id_str = filename.split('_')[-1]
-        motion_name = id_to_motion_name.get(int(motion_id_str))
-        print(motion_name)
+        # repeat the process for those are not in finished
+        if filename not in finished_motions:
+            print(filename)
+            motion_id_str = filename.split('_')[-1]
+            motion_name = id_to_motion_name.get(int(motion_id_str))
+            print(motion_name)
 
-        bvh = BVH()
-        bvh.load(bvh_reference)  # load euler angle rep from bvh data
-        local_rotations, local_positions, parents, offsets, _, _ = bvh.get_data()
-        global_positions = local_positions[:, 0, :]  # root joint
-        pos, rotmats = fk(local_rotations, global_positions, offsets, parents)
+            bvh = BVH()
+            bvh.load(bvh_reference)  # load euler angle rep from bvh data
+            local_rotations, local_positions, parents, offsets, _, _ = bvh.get_data()
+            global_positions = local_positions[:, 0, :]  # root joint
+            pos, rotmats = fk(local_rotations, global_positions, offsets, parents)
 
-    # converter = H36MConverter() use converter to save csv file in future
-    # Create the DataFrame for positions
-        columns = []
-        data = []
-        for joint_idx, joint_name in enumerate(joint_names):
-            columns.append(joint_name + "_x")
-            columns.append(joint_name + "_y")
-            columns.append(joint_name + "_z")
-
-        for frame, pose in enumerate(pos):
-            data_frame = []
+        # converter = H36MConverter() use converter to save csv file in future
+        # Create the DataFrame for positions
+            columns = []
+            data = []
             for joint_idx, joint_name in enumerate(joint_names):
-                data_frame.extend(pose[joint_idx, :])
-            data.append(data_frame)
+                columns.append(joint_name + "_x")
+                columns.append(joint_name + "_y")
+                columns.append(joint_name + "_z")
 
-        df = pd.DataFrame(data, columns=columns)
-        csv_files_dir = Path(figures_dir) / "position_csv_files"
-        os.makedirs(csv_files_dir, exist_ok=True)
-        output_path = os.path.join(Path(csv_files_dir),f"{filename}.csv")
-        df.to_csv(output_path, index=False)
-        print(f"file saved to {output_path}")
+            for frame, pose in enumerate(pos):
+                data_frame = []
+                for joint_idx, joint_name in enumerate(joint_names):
+                    data_frame.extend(pose[joint_idx, :])
+                data.append(data_frame)
 
-        animations_save_dir = Path(figures_dir) / "all_motions_animation" / motion_name
-        os.makedirs(animations_save_dir, exist_ok=True)
+            df = pd.DataFrame(data, columns=columns)
+            csv_files_dir = Path(figures_dir) / "position_csv_files"
+            os.makedirs(csv_files_dir, exist_ok=True)
+            output_path = os.path.join(Path(csv_files_dir),f"{filename}.csv")
+            df.to_csv(output_path, index=False)
+            print(f"file saved to {output_path}")
 
-        viewer = Viewer(use_reloader=True, xy_size=5, framerate=30)
-        Viewer.run = run_patched
-        viewer.add_skeleton(pos[:, :, :], parents)
-        viewer.add_floor()
-        print("Generating GIF... this may take a moment.")
-        frames = []
-        for j in range(viewer.max_frames):
-            fig = viewer._create_figure(frame=j)
-            img_bytes = fig.to_image(format="png", width=800, height=600, scale=2)
-            frames.append(imageio.imread(img_bytes))
-            if j % 20 == 0:
-                print(f"Processed frame {j}/{viewer.max_frames}")
-        imageio.mimsave(animations_save_dir/f'{filename}.gif', frames, fps = 30, loop=0)
-        print("Saved animation")
+            animations_save_dir = Path(figures_dir) / "all_motions_animation" / motion_name
+            os.makedirs(animations_save_dir, exist_ok=True)
+
+            viewer = Viewer(use_reloader=True, xy_size=5, framerate=30)
+            Viewer.run = run_patched
+            viewer.add_skeleton(pos[:, :, :], parents)
+            viewer.add_floor()
+            print("Generating GIF... this may take a moment.")
+            frames = []
+            for j in range(viewer.max_frames):
+                fig = viewer._create_figure(frame=j)
+                img_bytes = fig.to_image(format="png", width=800, height=600, scale=2)
+                frames.append(imageio.imread(img_bytes))
+                if j % 20 == 0:
+                    print(f"Processed frame {j}/{viewer.max_frames}")
+            imageio.mimsave(animations_save_dir/f'{filename}.gif', frames, fps = 30, loop=0)
+            print("Saved animation")
 
     # segment_save_dir = Path(figures_dir) / "segments_animation_filtered" / motion_name
     # os.makedirs(segment_save_dir, exist_ok=True)
