@@ -581,7 +581,6 @@ def main():
     # Load motion mapping
     motion_id_to_name = load_motion_mapping(DEFAULT_MOTION_MAPPING)
 
-    # model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"pos_filtered_mp_model_20_cutoff_3_tpoints_30")
     model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"new_seg_pymotion_position_mp_model_5")
     model_name = "mp_model_5_PC_tpoints_30"
 
@@ -623,7 +622,7 @@ def main():
         motion_names_dict=motion_id_to_name
     )
 
-    motion_to_reconstruct = 5  # e.g., 'walking'
+    motion_to_reconstruct = 2  # e.g., 'walking'
     desired_lengths = [200, 60]  # Different segment lengths
 
     reconstructed = reconstruct_segments_with_avg_weights(

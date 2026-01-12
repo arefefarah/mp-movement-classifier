@@ -253,10 +253,10 @@ def visualize_with_pca(X, y, out_dir):
     cumsum = np.cumsum(pca.explained_variance_ratio_[:n_components])
     ax2.plot(range(1, n_components + 1), cumsum,
              marker='o', linewidth=2, markersize=5)
-    ax2.axhline(y=0.8, color='r', linestyle='--',
-                label='80% variance', linewidth=2)
-    ax2.axhline(y=0.9, color='g', linestyle='--',
+    ax2.axhline(y=0.9, color='r', linestyle='--',
                 label='90% variance', linewidth=2)
+    ax2.axhline(y=0.95, color='g', linestyle='--',
+                label='95% variance', linewidth=2)
     ax2.set_xlabel('Number of Components', fontsize=12, fontweight='bold')
     ax2.set_ylabel('Cumulative Explained Variance', fontsize=12, fontweight='bold')
     ax2.set_title('Cumulative Variance Explained', fontsize=12, fontweight='bold')
@@ -306,16 +306,21 @@ def visualize_with_tsne(X, y, out_dir):
 def classify_motion_types(X, y, out_dir):
     # Split data into training and testing sets
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.3, random_state=42, stratify=y if len(np.unique(y)) > 1 else None
-    )
+        X, y, test_size=0.25, random_state=42, stratify=y)
 
-    # Train a Random Forest classifier
+
+    scaler = StandardScaler()
+    scaler.fit_transform(X_train)
+    X_train_scaled = scaler.transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    # Train a classifier
     # classifier = RandomForestClassifier(n_estimators=100, random_state=42)
     classifier = SVC(random_state=42)
-    classifier.fit(X_train, y_train)
+    classifier.fit(X_train_scaled, y_train)
 
     # Make predictions
-    y_pred = classifier.predict(X_test)
+    y_pred = classifier.predict(X_test_scaled)
 
     # Evaluate the classifier
     accuracy = np.mean(y_pred == y_test)

@@ -166,7 +166,7 @@ def main():
     # figures_dir = os.path.join("./../../results/segmentation_analysis")
     # Path(figures_dir).mkdir(exist_ok=True)
     # for i in range(9):
-    filename = f"subject_1_motion_05"
+    filename = f"subject_1_motion_02"
     # csv_file = f"../../data/pymotion_quat_csv_files/{filename}.csv"
     bvh_reference = f"../../data/bvh_files/{filename}.bvh"
     MAPPING_FILE = "../../data/common_motion_mapping.json"
@@ -186,7 +186,7 @@ def main():
     print(f"pos shape: {pos_original.shape}") # pos shape: (177, 16, 3) 177 num of frames, 16 joint, 3 coordinate= 48 channels total
 
     ### here we want to replace pos with recontructed values of TMP model
-    pos_file = os.path.join(model_dir, "reconstructed_segment_motion_5.npy")
+    pos_file = os.path.join(model_dir, "reconstructed_segment_motion_2.npy")
 
     tmp_array = np.load(pos_file) #array shape num_frmes, channels(16*3)
     pos = tmp_array.T.reshape(-1, len(joint_names), 3)

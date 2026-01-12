@@ -587,7 +587,8 @@ def main():
     scaler.fit_transform(X_train)
     X_train_scaled = scaler.transform(X_train)
     X_test_scaled = scaler.transform(X_test)
-    clf = RandomForestClassifier(n_estimators=100, random_state=42)
+    # clf = RandomForestClassifier(n_estimators=100, random_state=42)
+    clf = SVC(random_state=42)
     clf.fit(X_train_scaled, y_train)
 
     y_pred = clf.predict(X_test_scaled)
