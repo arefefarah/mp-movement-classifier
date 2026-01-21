@@ -1,6 +1,6 @@
 # saving folder settings
 
-SAVING_DIR = "../../results/tmp_configs"
+SAVING_DIR = "../../results/tmp_configs_manual_segmentation"
 
 
 # Application settings

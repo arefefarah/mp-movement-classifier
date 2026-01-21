@@ -7,7 +7,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.linear_model import LogisticRegression
-from sklearn.svm import SVC
+from sklearn.svm import SVC,LinearSVC
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -216,7 +216,7 @@ def visualize_with_pca(X, y, out_dir):
     X_pca = pca.fit_transform(X)
 
     plt.figure(figsize=(10, 8))
-    scatter = plt.scatter(X_pca[:, 0], X_pca[:, 1], c=y, cmap='viridis', alpha=0.8)
+    scatter = plt.scatter(X_pca[:, 0], X_pca[:, 1], c=y, cmap='hsv', alpha=0.8)
 
     plt.colorbar(scatter, label='Motion Type')
 
@@ -226,7 +226,7 @@ def visualize_with_pca(X, y, out_dir):
 
     unique_motions = np.unique(y)
     handles = [plt.Line2D([0], [0], marker='o', color='w',
-                          markerfacecolor=plt.cm.viridis(i / len(unique_motions)),
+                          markerfacecolor=plt.cm.hsv(i / len(unique_motions)),
                           markersize=10) for i in range(len(unique_motions))]
     plt.legend(handles, unique_motions, title='Motion Types')
 
@@ -278,7 +278,7 @@ def visualize_with_tsne(X, y, out_dir):
 
     # Create a scatter plot
     plt.figure(figsize=(10, 8))
-    scatter = plt.scatter(X_tsne[:, 0], X_tsne[:, 1], c=y, cmap='viridis', alpha=0.8)
+    scatter = plt.scatter(X_tsne[:, 0], X_tsne[:, 1], c=y, cmap='hsv', alpha=0.8)
 
     # Add a colorbar
     plt.colorbar(scatter, label='Motion Type')
@@ -291,7 +291,7 @@ def visualize_with_tsne(X, y, out_dir):
     # Add legend for unique motion types
     unique_motions = np.unique(y)
     handles = [plt.Line2D([0], [0], marker='o', color='w',
-                          markerfacecolor=plt.cm.viridis(i / len(unique_motions)),
+                          markerfacecolor=plt.cm.hsv(i / len(unique_motions)),
                           markersize=10) for i in range(len(unique_motions))]
     plt.legend(handles, unique_motions, title='Motion Types')
 
@@ -316,7 +316,8 @@ def classify_motion_types(X, y, out_dir):
 
     # Train a classifier
     # classifier = RandomForestClassifier(n_estimators=100, random_state=42)
-    classifier = SVC(random_state=42)
+    # classifier = SVC(random_state=42)
+    classifier = LinearSVC(C=1.0, penalty='l2', dual=True)
     classifier.fit(X_train_scaled, y_train)
 
     # Make predictions
@@ -360,7 +361,7 @@ def visualize_feature_importance(classifier, X, y, out_dir):
 
         # Create a heatmap
         plt.figure(figsize=(12, 10))
-        sns.heatmap(imp_reshaped, cmap='viridis', annot=False)
+        sns.heatmap(imp_reshaped, cmap='hsv', annot=False)
         plt.xlabel('Legendre Coefficient Index')
         plt.ylabel('Joint Index')
         plt.title('Feature Importance by Joint and Coefficient')
@@ -644,7 +645,7 @@ def _plot_distance_matrix(results, save_dir):
 
     fig, ax = plt.subplots(figsize=(12, 10))
 
-    im = ax.imshow(distances, cmap='viridis', aspect='auto')
+    im = ax.imshow(distances, cmap='hsv', aspect='auto')
 
     # Add colorbar
     cbar = plt.colorbar(im, ax=ax)
@@ -681,7 +682,7 @@ def _plot_distance_matrix(results, save_dir):
 def main():
 
     num_MPs = 5
-    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_pymotion_position_mp_model_{num_MPs}")
+    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_pymotion_position_mp_model_{num_MPs}_phase_two")
     out_dir = os.path.join(model_dir, "legandre_analysis")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

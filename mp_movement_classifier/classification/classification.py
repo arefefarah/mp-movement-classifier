@@ -16,7 +16,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.linear_model import LogisticRegression
-from sklearn.svm import SVC
+from sklearn.svm import SVC,LinearSVC
 from sklearn.manifold import TSNE
 from sklearn.neural_network import MLPClassifier
 from sklearn.model_selection import cross_val_score
@@ -171,8 +171,8 @@ def compare_classifiers(X_scaled, y, out_dir: Path,
     classifiers = {
         'Random Forest': RandomForestClassifier(n_estimators=100, random_state=42),
         'Logistic Regression': LogisticRegression(max_iter=1000, random_state=42),
-        'SVM': SVC(random_state=42),
-        'Neural Network': MLPClassifier(max_iter=1000, random_state=42)
+        'SVM': LinearSVC(C=1.0, penalty='l2', dual=True),
+        'MLP': MLPClassifier(max_iter=1000, random_state=42,solver="lbfgs",alpha=0.1)
     }
 
     results = {}
@@ -398,7 +398,7 @@ def analyze_feature_pca(
 
 
     plt.figure(figsize=(10, 8))
-    scatter = plt.scatter(X_pca[:, 0], X_pca[:, 1], c=y, cmap='viridis', alpha=0.8)
+    scatter = plt.scatter(X_pca[:, 0], X_pca[:, 1], c=y, cmap='hsv', alpha=0.8)
 
     plt.colorbar(scatter, label='Motion Type')
 
@@ -408,7 +408,7 @@ def analyze_feature_pca(
 
     unique_motions = np.unique(y)
     handles = [plt.Line2D([0], [0], marker='o', color='w',
-                          markerfacecolor=plt.cm.viridis(i / len(unique_motions)),
+                          markerfacecolor=plt.cm.hsv(i / len(unique_motions)),
                           markersize=10) for i in range(len(unique_motions))]
     plt.legend(handles, unique_motions, title='Motion Types')
 
@@ -478,24 +478,21 @@ def analyze_feature_pca(
 def visualize_with_tsne(X, y, out_dir):
     # Apply t-SNE
     tsne = TSNE(n_components=2, random_state=42, perplexity=min(30, len(X) - 1))
+    # tsne = tsne = TSNE(n_components=4, method='exact')
     X_tsne = tsne.fit_transform(X)
 
     # Create a scatter plot
     plt.figure(figsize=(10, 8))
-    scatter = plt.scatter(X_tsne[:, 0], X_tsne[:, 1], c=y, cmap='viridis', alpha=0.8)
+    scatter = plt.scatter(X_tsne[:, 0], X_tsne[:, 1], c=y, cmap="hsv", alpha=0.8)
 
     # Add a colorbar
     plt.colorbar(scatter, label='Motion Type')
-
-    # Add labels and title
     plt.xlabel('t-SNE Dimension 1')
     plt.ylabel('t-SNE Dimension 2')
     plt.title('t-SNE of TMP model features')
-
-    # Add legend for unique motion types
     unique_motions = np.unique(y)
     handles = [plt.Line2D([0], [0], marker='o', color='w',
-                          markerfacecolor=plt.cm.viridis(i / len(unique_motions)),
+                          markerfacecolor=plt.cm.hsv(i / len(unique_motions)),
                           markersize=10) for i in range(len(unique_motions))]
     plt.legend(handles, unique_motions, title='Motion Types')
 
@@ -503,6 +500,25 @@ def visualize_with_tsne(X, y, out_dir):
     plt.tight_layout()
     out_path = Path(out_dir) / 'tsne_visualization.png'
     plt.savefig(out_path, dpi=150)
+
+    # plt.figure(figsize=(10, 8))
+    # scatter = plt.scatter(X_tsne[:, 2], X_tsne[:, 3], c=y, cmap="hsv", alpha=0.8)
+    #
+    # # Add a colorbar
+    # plt.colorbar(scatter, label='Motion Type')
+    # plt.xlabel('t-SNE Dimension 3')
+    # plt.ylabel('t-SNE Dimension 4')
+    # plt.title('t-SNE of TMP model features')
+    # unique_motions = np.unique(y)
+    # handles = [plt.Line2D([0], [0], marker='o', color='w',
+    #                       markerfacecolor=plt.cm.hsv(i / len(unique_motions)),
+    #                       markersize=10) for i in range(len(unique_motions))]
+    # plt.legend(handles, unique_motions, title='Motion Types')
+    #
+    # plt.grid(True, alpha=0.3)
+    # plt.tight_layout()
+    # out_path = Path(out_dir) / 'tsne_visualization_3&4deimension.png'
+    # plt.savefig(out_path, dpi=150)
 
     return tsne
 
@@ -513,7 +529,8 @@ def main():
     cutoff_freq = 3.0
     tpoints = 30
     model_name = f"mp_model_{num_MPs}_cutoff_{cutoff_freq}"
-    model_dir = os.path.join(config.SAVING_DIR, f"new_seg_pymotion_position_mp_model_{num_MPs}")
+    # model_dir = os.path.join(config.SAVING_DIR, f"position_mp_model_{num_MPs}_tpoints_{tpoints}_phase2")
+    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_pymotion_position_mp_model_{num_MPs}_phase_two")
     model_file = os.path.join(model_dir, f"mp_model_{num_MPs}_PC_tpoints_{tpoints}")
 
     out_dir = os.path.join(model_dir, "classification")
@@ -588,13 +605,16 @@ def main():
     X_train_scaled = scaler.transform(X_train)
     X_test_scaled = scaler.transform(X_test)
     # clf = RandomForestClassifier(n_estimators=100, random_state=42)
-    clf = SVC(random_state=42)
+    # clf = SVC(random_state=42)
+    # clf = SVC(C=0.1, kernel='rbf')
+    clf = LinearSVC(C=1.0, penalty='l2', dual=True)
     clf.fit(X_train_scaled, y_train)
 
     y_pred = clf.predict(X_test_scaled)
 
     # Build and save report
     unique_labels = np.unique(y_test)
+    print(f"[info] Unique labels: {unique_labels}")
     report = classification_report(y_test, y_pred, labels=unique_labels)
     report_path = save_classification_report(report, str(out_dir))
     print(f"[info] Classification report saved to: {report_path}")

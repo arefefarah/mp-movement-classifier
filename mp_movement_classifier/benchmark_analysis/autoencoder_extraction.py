@@ -506,14 +506,14 @@ def visualize_latent_space(representations, labels, method='tsne'):
     pca_repr = pca.fit_transform(representations)
 
     scatter = axes[0].scatter(pca_repr[:, 0], pca_repr[:, 1],
-                              c=labels, cmap='viridis', alpha=0.8)
+                              c=labels, cmap='hsv', alpha=0.8)
     axes[0].set_title(f'PCA (Variance Explained: {pca.explained_variance_ratio_.sum():.2f})')
     axes[0].set_xlabel(f'PC1 ({pca.explained_variance_ratio_[0]:.2f})')
     axes[0].set_ylabel(f'PC2 ({pca.explained_variance_ratio_[1]:.2f})')
     plt.colorbar(scatter, ax=axes[0], label='Motion Type')
     unique_motions = np.unique(labels)
     handles = [plt.Line2D([0], [0], marker='o', color='w',
-                          markerfacecolor=plt.cm.viridis(i / len(unique_motions)),
+                          markerfacecolor=plt.cm.hsv(i / len(unique_motions)),
                           markersize=10) for i in range(len(unique_motions))]
     plt.legend(handles, unique_motions, title='Motion Types')
 
@@ -528,7 +528,7 @@ def visualize_latent_space(representations, labels, method='tsne'):
 
     reduced = reducer.fit_transform(representations)
     scatter = axes[1].scatter(reduced[:, 0], reduced[:, 1],
-                              c=labels,  cmap='viridis', alpha=0.8)
+                              c=labels,  cmap='hsv', alpha=0.8)
     axes[1].set_title(title)
     axes[1].set_xlabel('Dimension 1')
     axes[1].set_ylabel('Dimension 2')
@@ -587,7 +587,7 @@ def analyze_variance_explained(representations):
 
 def main():
     num_MPs = 5
-    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_pymotion_position_mp_model_{num_MPs}")
+    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_pymotion_position_mp_model_{num_MPs}_phase_two")
     out_dir = os.path.join(model_dir, "autoencoder_analysis")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

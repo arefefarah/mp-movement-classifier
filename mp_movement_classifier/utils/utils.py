@@ -352,7 +352,6 @@ def process_motion_data(folder_path,data_type,filtering ):
                 for segment in segments:
                     processed_segments.append(segment.T)  # Transpose to [signals, time]
                     segment_motion_ids.append(motion_id)
-
     if not processed_segments:
         raise ValueError("No segments could be processed")
 
