@@ -18,6 +18,7 @@ from sklearn.model_selection import cross_val_score
 from sklearn.decomposition import PCA
 from pathlib import Path
 from mp_movement_classifier.utils import config
+from mp_movement_classifier.classification.classification import calculate_rdm
 from mp_movement_classifier.utils.utils import (
     load_model_with_full_state,
     process_motion_data,
@@ -201,6 +202,7 @@ def plot_coefficient_distributions(coefficients, motion_ids,
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         figures[motion_id] = fig
 
+
     return figures
 
 
@@ -234,7 +236,7 @@ def visualize_with_pca(X, y, out_dir):
     plt.tight_layout()
     out_path = Path(out_dir) / 'pca_visualization.png'
     plt.savefig(out_path, dpi=150)
-
+    plt.close()
     #plot variance explained
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
@@ -266,7 +268,7 @@ def visualize_with_pca(X, y, out_dir):
     plt.tight_layout()
     out_path = Path(out_dir) / 'pca_variance_explained.png'
     plt.savefig(out_path, dpi=150)
-
+    plt.close()
 
     return pca
 
@@ -299,7 +301,7 @@ def visualize_with_tsne(X, y, out_dir):
     plt.tight_layout()
     out_path = Path(out_dir) / 'tsne_visualization.png'
     plt.savefig(out_path, dpi=150)
-
+    plt.close()
     return tsne
 
 
@@ -319,7 +321,7 @@ def classify_motion_types(X, y, out_dir):
     # classifier = SVC(random_state=42)
     classifier = LinearSVC(C=1.0, penalty='l2', dual=True)
     classifier.fit(X_train_scaled, y_train)
-
+    cv_scores = cross_val_score(classifier, X_train_scaled, y_train, cv=5)
     # Make predictions
     y_pred = classifier.predict(X_test_scaled)
 
@@ -343,7 +345,7 @@ def classify_motion_types(X, y, out_dir):
     plt.tight_layout()
     out_path = Path(out_dir) / 'confusion_matrix.png'
     plt.savefig(out_path, dpi=150)
-
+    plt.close()
     return classifier, accuracy
 
 
@@ -368,7 +370,7 @@ def visualize_feature_importance(classifier, X, y, out_dir):
         plt.tight_layout()
         out_path = Path(out_dir) / 'feature_importance.png'
         plt.savefig(out_path, dpi=150)
-
+        plt.close()
         # Plot top 20 most important features
         indices = np.argsort(importances)[-20:]
         plt.figure(figsize=(10, 8))
@@ -379,6 +381,7 @@ def visualize_feature_importance(classifier, X, y, out_dir):
         plt.tight_layout()
         out_path = Path(out_dir) / 'top_features.png'
         plt.savefig(out_path, dpi=150)
+        plt.close()
 
 
 def analyze_first_degree_coefficients(coefficients, motion_ids, save_dir):
@@ -511,7 +514,7 @@ def _plot_pca_2d(results, save_dir):
     plt.tight_layout()
     plt.savefig(save_dir / 'pca_2d_motion_separation.png',
                 dpi=300, bbox_inches='tight')
-
+    plt.close()
     print(f"Saved: {save_dir / 'pca_2d_motion_separation.png'}")
 
 
@@ -557,7 +560,7 @@ def _plot_pca_3d(results, save_dir):
     plt.tight_layout()
     plt.savefig(save_dir / 'pca_3d_motion_separation.png',
                 dpi=300, bbox_inches='tight')
-
+    plt.close()
     print(f"Saved: {save_dir / 'pca_3d_motion_separation.png'}")
 
 
@@ -594,7 +597,7 @@ def _plot_variance_explained(results, save_dir):
     plt.tight_layout()
     plt.savefig(save_dir / 'pca_variance_explained.png',
                 dpi=300, bbox_inches='tight')
-
+    plt.close()
     print(f"Saved: {save_dir / 'pca_variance_explained.png'}")
 
 
@@ -629,7 +632,7 @@ def _plot_feature_importance(results, save_dir):
     plt.tight_layout()
     plt.savefig(save_dir / 'pca_feature_loadings.png',
                 dpi=300, bbox_inches='tight')
-
+    plt.close()
     print(f"Saved: {save_dir / 'pca_feature_loadings.png'}")
 
 
@@ -675,7 +678,7 @@ def _plot_distance_matrix(results, save_dir):
     plt.savefig(save_dir / 'pca_distance_matrix.png',
                 dpi=300, bbox_inches='tight')
 
-
+    plt.close()
     print(f"Saved: {save_dir / 'pca_distance_matrix.png'}")
 
 
@@ -690,9 +693,12 @@ def main():
     motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=folder_path,
                                                                              data_type = "position",
                                                                              filtering= False)
+    num_segments = len(processed_segments)
+    print(f"Number of segments: {num_segments}")
+    num_signals = processed_segments[0].shape[0]
+    print(f"Number of signals: {num_signals}")
 
-
-    max_degree = 5  # for polynomial degrees as basis function , For 10 degrees (0 to 9)
+    max_degree = 1  # for polynomial degrees as basis function , For 10 degrees (0 to 9)
     coefficients, errors = process_with_legendre_basis(processed_segments, max_degree)
 
     # len(coefficients)  # 6447
@@ -707,14 +713,22 @@ def main():
     )
 
     X, y = prepare_coefficient_data(coefficients, segment_motion_ids)
-    print(f"Data shape: {X.shape}, with {len(np.unique(y))} unique motion types")
+    print(f"Feature matrix shape: {X.shape}")
+    print(f"Label array shape: {y.shape}")
+    print(f" {len(np.unique(y))} unique motion types")
 
     pca = visualize_with_pca(X, y, out_dir)
     print(f"Total variance explained by 2 PCs: {sum(pca.explained_variance_ratio_[:2]):.4f}")
 
     tsne = visualize_with_tsne(X, y, out_dir)
 
+    rdm_results = calculate_rdm(
+        X=X,
+        y=y,
+        out_dir=out_dir )
+
     # Classify motion types
+    print(f"feature space shape: {X.shape}")
     classifier, accuracy = classify_motion_types(X, y, out_dir)
 
     figures = plot_coefficient_distributions(

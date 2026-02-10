@@ -1,3 +1,5 @@
+from tkinter.messagebox import showerror
+
 import numpy as np
 import re
 import os
@@ -19,7 +21,7 @@ import json
 import imageio.v2 as imageio
 from matplotlib.animation import FuncAnimation
 
-from mp_movement_classifier.utils.utils import calculate_angular_velocity_quat,segment_motion_csv
+# from mp_movement_classifier.utils.utils import calculate_angular_velocity_quat,segment_motion_csv
 from mp_movement_classifier.utils import config
 from pymotion.io.bvh import BVH
 from pymotion.ops.skeleton import from_root_positions, fk
@@ -48,290 +50,62 @@ def run_patched(self, debug=True, use_reloader=None):
     # Use app.run() instead of app.run_server()
     self.app.run(debug=debug, use_reloader=use_reloader)
 
-def compute_joint_speed(motion_data, joints, frame_time, wrist_joints=['LeftWrist', 'RightWrist'],
-                        ankle_joints=['LeftAnkle', 'RightAnkle']):
-    """
-    Compute speed of specified joints
+def extract_all_motions_csv_generate_animation(path,finished_motions,id_to_motion_name,joint_names,figures_dir):
 
-    Returns:
-        Joint speed array
-    """
-    # Initialize speed array
-    joint_speeds = np.zeros(motion_data.shape[0])
+    for bvh_reference in path.glob("*.bvh"):
+        filename = bvh_reference.stem
+        # repeat the process for those are not in finished
+        if filename not in finished_motions:
+            print(filename)
+            motion_id_str = filename.split('_')[-1]
+            motion_name = id_to_motion_name.get(int(motion_id_str))
+            print(motion_name)
 
-    # Compute speeds for wrist and ankle joints
-    for joint_name in wrist_joints + ankle_joints:
-        if joint_name not in joints:
-            print(f"Warning: Joint {joint_name} not found. Skipping.")
-            continue
+            bvh = BVH()
+            bvh.load(bvh_reference)  # load euler angle rep from bvh data
+            local_rotations, local_positions, parents, offsets, _, _ = bvh.get_data()
+            global_positions = local_positions[:, 0, :]  # root joint
+            pos, rotmats = fk(local_rotations, global_positions, offsets, parents)
 
-        # Extract joint angles
-        joint_angles = extract_joint_angles_robust(joints, motion_data, joint_name)
+            # converter = H36MConverter() use converter to save csv file in future
+            # Create the DataFrame for positions
+            columns = []
+            data = []
+            for joint_idx, joint_name in enumerate(joint_names):
+                columns.append(joint_name + "_x")
+                columns.append(joint_name + "_y")
+                columns.append(joint_name + "_z")
 
-        if joint_angles is None:
-            continue
+            for frame, pose in enumerate(pos):
+                data_frame = []
+                for joint_idx, joint_name in enumerate(joint_names):
+                    data_frame.extend(pose[joint_idx, :])
+                data.append(data_frame)
 
-        # Compute derivative (speed) for each rotation channel
-        for channel, angles in joint_angles.items():
-            # Compute speed using numerical differentiation
-            joint_speed = np.abs(np.gradient(angles) / frame_time)
-            joint_speeds += joint_speed
+            df = pd.DataFrame(data, columns=columns)
+            csv_files_dir = Path(figures_dir) / "position_csv_files"
+            os.makedirs(csv_files_dir, exist_ok=True)
+            output_path = os.path.join(Path(csv_files_dir), f"{filename}.csv")
+            df.to_csv(output_path, index=False)
+            print(f"file saved to {output_path}")
 
-    return joint_speeds
-#
-# def segment_motion_trajectories(bvh_filename, motion_data, joints, frame_time,
-#                                 target_joints=None,
-#                                 wrist_joints=['LeftWrist', 'RightWrist'],
-#                                 ankle_joints=['LeftAnkle', 'RightAnkle'],
-#                                 min_boundary_distance=0.160):  # 160 ms
-#     """
-#     Segment motion trajectories based on joint speed and visualize full joint trajectories
-#
-#     Returns:
-#         Tuple of (segments, boundary_frames, joint_speeds)
-#     """
-#     # Set default target joints if not provided
-#     if target_joints is None:
-#         target_joints = wrist_joints + ankle_joints + ['Hip', 'Spine', 'Thorax']
-#
-#     # Compute joint speeds
-#     joint_speeds = compute_joint_speed(motion_data, joints, frame_time,
-#                                        wrist_joints, ankle_joints)
-#     joint_speeds = compute_joint_speed(motion_data, joints, frame_time,
-#                                        wrist_joints, ankle_joints)
-#     min_frames = int(min_boundary_distance / frame_time)
-#     # min_frames = 30  # i manually change it to 6 instead of 4
-#     print(f"Minimum distance in frames: {min_frames}")
-#     peaks, _ = find_peaks(-joint_speeds, distance=min_frames)
-#     boundary_frames = [0] + list(peaks) + [len(joint_speeds) - 1]
-#     # print(f"boundary_frames: {boundary_frames}")
-#     boundary_frames.sort()
-#
-#     # Create segments
-#     boundaries = [boundary_frames[i:i + 2] for i in range(len(boundary_frames) - 1)]
-#     segments = [motion_data[boundary_frames[i]:boundary_frames[i + 1], :] for i in range(len(boundary_frames) - 1)]
-#
-#     # Create time vector
-#     time_vector = np.arange(len(joint_speeds)) * frame_time
-#
-#     # Create plots
-#     fig, axes = plt.subplots(len(target_joints), 1, figsize=(16, 5 * len(target_joints)))
-#     if len(target_joints) == 1:
-#         axes = [axes]
-#
-#     # Color palette
-#     colors = ['red', 'green', 'blue', 'orange', 'purple', 'brown']
-#
-#     # Iterate through target joints
-#     for i, joint_name in enumerate(target_joints):
-#         # Skip if joint not in joints
-#         if joint_name not in joints:
-#             print(f"Warning: Joint {joint_name} not found. Skipping.")
-#             continue
-#
-#         # Extract joint angles
-#         joint_angles = extract_joint_angles_robust(joints, motion_data, joint_name)
-#
-#         if joint_angles is None:
-#             continue
-#
-#         ax = axes[i]
-#         ax.set_title(f'{joint_name} Joint Angles with Motion Segments',
-#                      fontsize=16, fontweight='bold')
-#
-#         # Plot each rotation channel
-#         for j, (channel, angle_data) in enumerate(joint_angles.items()):
-#             color = colors[j % len(colors)]
-#             ax.plot(time_vector, angle_data,
-#                     color=color,
-#                     label=f'{channel}',
-#                     linewidth=1.5,
-#                     alpha=0.7)
-#
-#         # Plot segment boundaries
-#         for boundary in boundary_frames[1:-1]:  # Exclude first and last
-#             ax.axvline(x=time_vector[boundary], color='r', linestyle='--', alpha=0.7)
-#
-#         # Highlight segments with different colors
-#         segment_colors = plt.cm.viridis(np.linspace(0, 1, len(segments)))
-#         for j, segment in enumerate(segments):
-#             boundary = boundaries[j]
-#             start_time = time_vector[boundary[0]]
-#             end_time = time_vector[boundary[1]]
-#             ax.axvspan(start_time, end_time, color=segment_colors[j], alpha=0.2,
-#                        label=f'Segment {j + 1}')
-#
-#         ax.set_xlabel('Time (seconds)', fontsize=12)
-#         ax.set_ylabel('Angle (degrees)', fontsize=12)
-#         ax.legend(fontsize=10, loc='upper right')
-#         ax.grid(True, alpha=0.3)
-#         ax.set_xlim(0, time_vector[-1])
-#
-#     plt.tight_layout()
-#
-#     # Save plot
-#     # figures_dir = os.path.join("./../../result/tmp_configs/expmap_mp_model_20", 'motion_segmentation')
-#     model_dir = os.path.join(config.SAVING_DIR, f"expmap_mp_model_20")
-#     figures_dir = os.path.join(model_dir, "motion_segmentation")
-#     os.makedirs(figures_dir, exist_ok=True)
-#     plt.savefig(os.path.join(figures_dir, f"{bvh_filename}_joint_trajectories_segmentation.png"),
-#                 dpi=300, bbox_inches='tight')
-#     plt.close()
-#
-#     # Print segment information
-#     # print(f"Duration of complete video : {len(joint_speeds) * frame_time} seconds")
-#     # print(f"Number of segments: {len(segments)}")
-#     print("\n📊 Motion Segments:")
-#     for i, segment in enumerate(segments, 1):
-#         boundary = boundaries[i - 1]
-#         print("segment shape", segment.shape)
-#         print("boundary", boundary)
-#         print(f"   Segment {i}: Frames {boundary[0]}-{boundary[1]} ")
-#         print(f"   Time: {time_vector[boundary[0]]} s - {time_vector[boundary[1]]} s")
-#
-#     return segments, boundaries,boundary_frames, joint_speeds
+            animations_save_dir = Path(figures_dir) / "all_motions_animation" / motion_name
+            os.makedirs(animations_save_dir, exist_ok=True)
 
-
-def extract_joint_angles_robust(joints, motion_data, joint_name):
-    """
-    Extract rotation angles for a specific joint with error handling
-    """
-    if joint_name not in joints:
-        available_joints = list(joints.keys())
-        print(f"Joint '{joint_name}' not found.")
-        print(f"Available joints: {available_joints}")
-        return None
-
-    joint_info = joints[joint_name]
-    start_idx = joint_info['start_index']
-    channels = joint_info['channels']
-
-    angles = {}
-    for i, channel in enumerate(channels):
-        if 'rotation' in channel.lower():
-            if start_idx + i < motion_data.shape[1]:
-                angles[channel] = motion_data[:, start_idx + i]
-            else:
-                print(f"Channel index out of range for {joint_name}.{channel}")
-
-    return angles if angles else None
-
-
-def set_axes_equal(ax):
-    """Set 3D axes to equal scale for better visualization."""
-    x_limits = ax.get_xlim3d()
-    y_limits = ax.get_ylim3d()
-    z_limits = ax.get_zlim3d()
-    x_range = max(x_limits) - min(x_limits)
-    y_range = max(y_limits) - min(y_limits)
-    z_range = max(z_limits) - min(z_limits)
-    max_range = max(x_range, y_range, z_range)
-    mid_x = sum(x_limits) / 2
-    mid_y = sum(y_limits) / 2
-    mid_z = sum(z_limits) / 2
-    ax.set_xlim3d([mid_x - max_range/2, mid_x + max_range/2])
-    ax.set_ylim3d([mid_y - max_range/2, mid_y + max_range/2])
-    ax.set_zlim3d([mid_z - max_range/2, mid_z + max_range/2])
-
-
-def visualize_motion_with_segmentation(file_name,csv_file_path, wrist_joints , ankle_joints,save_dir):
-
-    motion_df = pd.read_csv(csv_file_path)
-    frame_rate = 30
-    frame_time = 1 / frame_rate
-    segments, boundaries = segment_motion_csv(csv_file_path, data_type= "position",
-                                              wrist_joints = wrist_joints,
-                                              ankle_joints = ankle_joints,
-                                              filtering=False)
-    print(f"len of segments: {len(segments)}")
-    boundary_frames = [boundaries[0][0]] + [b[1] for b in boundaries]
-
-
-    # # Create time vector
-    time_vector = np.arange(motion_df.shape[0]) * frame_time
-
-    target_joints=["LWrist","LKnee","LElbow","LAnkle","Neck","LShoulder"]
-
-    # Create plots
-    fig, axes = plt.subplots(len(target_joints), 1, figsize=(16, 5 * len(target_joints)))
-    if len(target_joints) == 1:
-        axes = [axes]
-
-    # Color palette
-    colors = ['red', 'green', 'blue', 'orange', 'purple', 'brown']
-
-    # Iterate through target joints
-    for i, joint_name in enumerate(target_joints):
-        columns = [col for col in motion_df.columns if col.startswith(joint_name)]
-        axis_angle_rep = motion_df[columns]
-
-        ax = axes[i]
-        ax.set_title(f'{joint_name} Joint rep with Motion Segments',
-                     fontsize=16, fontweight='bold')
-
-        # Plot each rotation channel
-        for idx,column in enumerate(columns):
-            color = colors[idx % len(colors)]
-            ax.plot(time_vector,motion_df[column],
-                    color=color,
-                    label=f'{column}',
-                    linewidth=1.5,
-                    alpha=0.7)
-
-        # Plot segment boundaries
-        for boundary in boundary_frames[1:-1]:  # Exclude first and last
-            # ax.axvline(x=time_vector[boundary], color='r', linestyle='--', alpha=0.7)
-            ax.axvline(x=time_vector[int(boundary)], color='r', linestyle='--', alpha=0.7)
-
-        # Highlight segments with different colors
-        segment_colors = plt.cm.viridis(np.linspace(0, 1, len(segments)))
-        for j, segment in enumerate(segments):
-            boundary = boundaries[j]
-            start_time = time_vector[boundary[0]]
-            end_time = time_vector[boundary[1]]
-            ax.axvspan(start_time, end_time, color=segment_colors[j], alpha=0.2,
-                       label=f'Segment {j + 1}')
-
-        ax.set_xlabel('Time (seconds)', fontsize=12)
-        ax.set_ylabel('Angle (degrees)', fontsize=12)
-        ax.legend(fontsize=10, loc='upper right')
-        ax.grid(True, alpha=0.3)
-        ax.set_xlim(0, time_vector[-1])
-
-    plt.tight_layout()
-
-    figures_dir = os.path.join(save_dir, "motion_segmentation")
-    os.makedirs(figures_dir, exist_ok=True)
-    plt.savefig(os.path.join(figures_dir, f"{file_name}.png"),
-                dpi=300, bbox_inches='tight')
-    plt.close()
-
-    return segments,boundaries
-
-
-def calculate_joint_angular_speed(rotation_vectors, frame_rate=30):
-    """
-    Calculate angular speed from rotation vectors (exponential maps)
-
-    Args:
-        rotation_vectors: [num_frames, 3] array of rotation vectors
-                         (one 3D rotation vector per frame)
-        frame_rate: frames per second (Hz)
-
-    Returns:
-        angular_speeds: [num_frames-1] array of angular speeds (radians/second)
-    """
-
-    dt = 1.0 / frame_rate  # Time between frames
-
-    # Get magnitude (angle) of each rotation vector
-    rotation_angles = np.linalg.norm(rotation_vectors, axis=1)  # [num_frames]
-
-    # Compute angular speed between consecutive frames
-    angular_speeds = np.abs(np.diff(rotation_angles)) / dt
-
-    return angular_speeds
-
+            viewer = Viewer(use_reloader=True, xy_size=5, framerate=30)
+            Viewer.run = run_patched
+            viewer.add_skeleton(pos[:, :, :], parents)
+            viewer.add_floor()
+            print("Generating GIF... this may take a moment.")
+            frames = []
+            for j in range(viewer.max_frames):
+                fig = viewer._create_figure(frame=j)
+                img_bytes = fig.to_image(format="png", width=800, height=600, scale=2)
+                frames.append(imageio.imread(img_bytes))
+                if j % 20 == 0:
+                    print(f"Processed frame {j}/{viewer.max_frames}")
+            imageio.mimsave(animations_save_dir / f'{filename}.gif', frames, fps=30, loop=0)
+            print("Saved animation")
 
 
 def main():
@@ -351,103 +125,87 @@ def main():
         motion_mapping = data["mapping"]
     id_to_motion_name = {id_val: motion_name for motion_name, id_val in motion_mapping.items()}
 
-    finished_motions = [
-        "subject_16_motion_02", "subject_23_motion_02", "subject_42_motion_02", "subject_45_motion_02",
-        "subject_49_motion_02", "subject_62_motion_02", "subject_69_motion_02", "subject_2_motion_05",
-        "subject_9_motion_05", "subject_17_motion_05", "subject_20_motion_05", "subject_48_motion_05",
-        "subject_54_motion_05", "subject_59_motion_05", "subject_82_motion_05", "subject_1_motion_18",
-        "subject_13_motion_18", "subject_22_motion_18", "subject_39_motion_18", "subject_49_motion_18",
-        "subject_55_motion_18", "subject_59_motion_18", "subject_61_motion_18", "subject_87_motion_18",
-        "subject_8_motion_17", "subject_12_motion_17", "subject_37_motion_17", "subject_42_motion_17",
-        "subject_52_motion_17", "subject_77_motion_17", "subject_2_motion_11", "subject_34_motion_11",
-        "subject_39_motion_11", "subject_42_motion_11", "subject_49_motion_11", "subject_51_motion_11",
-        "subject_53_motion_11", "subject_76_motion_11", "subject_35_motion_09", "subject_43_motion_09",
-        "subject_88_motion_09", "subject_5_motion_08", "subject_10_motion_08", "subject_20_motion_08",
-        "subject_21_motion_08", "subject_23_motion_08", "subject_29_motion_08", "subject_34_motion_08",
-        "subject_35_motion_08", "subject_36_motion_08", "subject_63_motion_08", "subject_70_motion_08",
-        "subject_82_motion_08", "subject_90_motion_08", "subject_8_motion_03", "subject_21_motion_03",
-        "subject_25_motion_03", "subject_36_motion_03", "subject_38_motion_03", "subject_48_motion_03",
-        "subject_52_motion_03", "subject_59_motion_03", "subject_64_motion_03", "subject_76_motion_03",
-        "subject_9_motion_00", "subject_19_motion_00", "subject_32_motion_00", "subject_52_motion_00",
-        "subject_57_motion_00", "subject_83_motion_00", "subject_16_motion_06", "subject_39_motion_06",
-        "subject_41_motion_06", "subject_55_motion_06", "subject_60_motion_06", "subject_70_motion_06",
-        "subject_75_motion_06", "subject_10_motion_01", "subject_15_motion_01", "subject_25_motion_01",
-        "subject_29_motion_01", "subject_30_motion_01", "subject_47_motion_01", "subject_54_motion_01",
-        "subject_63_motion_01", "subject_70_motion_01", "subject_10_motion_12", "subject_36_motion_12",
-        "subject_53_motion_12", "subject_56_motion_12", "subject_59_motion_12", "subject_60_motion_12",
-        "subject_76_motion_12", "subject_77_motion_12", "subject_81_motion_12", "subject_8_motion_19",
-        "subject_17_motion_19", "subject_49_motion_19", "subject_63_motion_19", "subject_65_motion_19",
-        "subject_2_motion_16", "subject_18_motion_16", "subject_24_motion_16", "subject_29_motion_16",
-        "subject_32_motion_16", "subject_33_motion_16", "subject_34_motion_16", "subject_44_motion_16",
-        "subject_63_motion_16", "subject_4_motion_07", "subject_10_motion_07", "subject_11_motion_07",
-        "subject_13_motion_07", "subject_27_motion_07", "subject_36_motion_07", "subject_41_motion_07",
-        "subject_47_motion_07", "subject_2_motion_13", "subject_5_motion_13", "subject_17_motion_13",
-        "subject_20_motion_13", "subject_34_motion_13", "subject_49_motion_13", "subject_57_motion_13",
-        "subject_5_motion_20", "subject_16_motion_20", "subject_18_motion_20", "subject_31_motion_20",
-        "subject_46_motion_20", "subject_52_motion_20", "subject_56_motion_20", "subject_68_motion_20",
-        "subject_81_motion_20", "subject_89_motion_20", "subject_13_motion_10", "subject_19_motion_10",
-        "subject_28_motion_10", "subject_37_motion_10", "subject_38_motion_10", "subject_43_motion_10",
-        "subject_56_motion_10", "subject_75_motion_10", "subject_2_motion_14", "subject_11_motion_14",
-        "subject_12_motion_14", "subject_15_motion_14", "subject_19_motion_14", "subject_42_motion_14",
-        "subject_54_motion_14", "subject_55_motion_14", "subject_60_motion_14", "subject_71_motion_14",
-        "subject_90_motion_14", "subject_4_motion_04", "subject_9_motion_04", "subject_12_motion_04",
-        "subject_21_motion_04", "subject_24_motion_04", "subject_25_motion_04", "subject_42_motion_04",
-        "subject_62_motion_04", "subject_63_motion_04", "subject_70_motion_04", "subject_82_motion_04"
+    finished_motions = []
+    # extract_all_motions_csv_generate_animation(path, finished_motions, id_to_motion_name, joint_names, figures_dir)
+
+    motions_to_visualize = [
+        "subject_16_motion_02", "subject_9_motion_05","subject_59_motion_18","subject_12_motion_17","subject_2_motion_11",
+        "subject_28_motion_09","subject_23_motion_08","subject_21_motion_03", "subject_32_motion_00","subject_70_motion_06",
+        "subject_15_motion_01","subject_60_motion_12","subject_13_motion_07","subject_17_motion_13","subject_75_motion_10",
+        "subject_19_motion_14"
     ]
-    for bvh_reference in path.glob("*.bvh"):
-        filename = bvh_reference.stem
-        # repeat the process for those are not in finished
-        if filename not in finished_motions:
-            print(filename)
-            motion_id_str = filename.split('_')[-1]
-            motion_name = id_to_motion_name.get(int(motion_id_str))
-            print(motion_name)
+    Segments_index = "../../results/segments_index.json"
+    with open(Segments_index, 'r') as f:
+        data = json.load(f)
 
-            bvh = BVH()
-            bvh.load(bvh_reference)  # load euler angle rep from bvh data
-            local_rotations, local_positions, parents, offsets, _, _ = bvh.get_data()
-            global_positions = local_positions[:, 0, :]  # root joint
-            pos, rotmats = fk(local_rotations, global_positions, offsets, parents)
+    folder_path = "../../data/pymotion_position_csv_files"
+    frame_time = 1/30
 
-        # converter = H36MConverter() use converter to save csv file in future
-        # Create the DataFrame for positions
-            columns = []
-            data = []
-            for joint_idx, joint_name in enumerate(joint_names):
-                columns.append(joint_name + "_x")
-                columns.append(joint_name + "_y")
-                columns.append(joint_name + "_z")
+    for motion in motions_to_visualize:
+        boundaries = data[motion]
+        filename = motion + ".csv"
+        motion_id_str = motion.split('_')[-1]
+        motion_name = id_to_motion_name.get(int(motion_id_str))
+        csv_path = os.path.join(Path(folder_path), filename)
+        motion_df = pd.read_csv(csv_path)
+        # channels = df.columns
+        time_vector = np.arange(motion_df.shape[0]) * frame_time
 
-            for frame, pose in enumerate(pos):
-                data_frame = []
-                for joint_idx, joint_name in enumerate(joint_names):
-                    data_frame.extend(pose[joint_idx, :])
-                data.append(data_frame)
+        target_joints=["LWrist","LKnee","LElbow","LAnkle","Neck","LShoulder"]
 
-            df = pd.DataFrame(data, columns=columns)
-            csv_files_dir = Path(figures_dir) / "position_csv_files"
-            os.makedirs(csv_files_dir, exist_ok=True)
-            output_path = os.path.join(Path(csv_files_dir),f"{filename}.csv")
-            df.to_csv(output_path, index=False)
-            print(f"file saved to {output_path}")
+        # Create plots
+        fig, axes = plt.subplots(len(target_joints), 1, figsize=(16, 5 * len(target_joints)))
+        if len(target_joints) == 1:
+            axes = [axes]
+        colors = ['red', 'green', 'blue', 'orange', 'purple', 'brown']
 
-            animations_save_dir = Path(figures_dir) / "all_motions_animation" / motion_name
-            os.makedirs(animations_save_dir, exist_ok=True)
+        # Iterate through target joints
+        for i, joint_name in enumerate(target_joints):
+            columns = [col for col in motion_df.columns if col.startswith(joint_name)]
 
-            viewer = Viewer(use_reloader=True, xy_size=5, framerate=30)
-            Viewer.run = run_patched
-            viewer.add_skeleton(pos[:, :, :], parents)
-            viewer.add_floor()
-            print("Generating GIF... this may take a moment.")
-            frames = []
-            for j in range(viewer.max_frames):
-                fig = viewer._create_figure(frame=j)
-                img_bytes = fig.to_image(format="png", width=800, height=600, scale=2)
-                frames.append(imageio.imread(img_bytes))
-                if j % 20 == 0:
-                    print(f"Processed frame {j}/{viewer.max_frames}")
-            imageio.mimsave(animations_save_dir/f'{filename}.gif', frames, fps = 30, loop=0)
-            print("Saved animation")
+            ax = axes[i]
+            ax.set_title(f'{motion_name}, {joint_name} Joint rep with Motion Segments',
+                         fontsize=16, fontweight='bold')
+
+            # Plot each rotation channel
+            for idx,column in enumerate(columns):
+                color = colors[idx % len(colors)]
+                ax.plot(time_vector,motion_df[column],
+                        color=color,
+                        label=f'{column}',
+                        linewidth=1.5,
+                        alpha=0.7)
+
+            # Plot segment boundaries
+            segment_colors = plt.cm.viridis(np.linspace(0, 1, len(boundaries)))
+            j = 0
+            for boundary in boundaries:
+                start_time = time_vector[boundary[0]]
+                end_time = time_vector[boundary[1]]
+                ax.axvline(x=start_time, color='r', linestyle='--', alpha=0.7)
+                ax.axvline(x=end_time, color='r', linestyle='--', alpha=0.7)
+                ax.axvspan(start_time, end_time, color=segment_colors[j], alpha=0.2,
+                           label=f'Segment {j + 1}')
+                j=j+1
+
+            ax.set_xlabel('Time (seconds)', fontsize=12)
+            ax.set_ylabel('Angle (degrees)', fontsize=12)
+            ax.legend(fontsize=10, loc='upper right')
+            ax.grid(True, alpha=0.3)
+            ax.set_xlim(0, time_vector[-1])
+
+        plt.tight_layout()
+
+        seg_dir = os.path.join(figures_dir, "segmentation_boundaries")
+        os.makedirs(seg_dir, exist_ok=True)
+        plt.savefig(os.path.join(seg_dir, f"{motion}.png"),
+                    dpi=300, bbox_inches='tight')
+        plt.close()
+
+
+
+
+
 
     # segment_save_dir = Path(figures_dir) / "segments_animation_filtered" / motion_name
     # os.makedirs(segment_save_dir, exist_ok=True)
@@ -537,3 +295,184 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
+# def compute_joint_speed(motion_data, joints, frame_time, wrist_joints=['LeftWrist', 'RightWrist'],
+#                         ankle_joints=['LeftAnkle', 'RightAnkle']):
+#     """
+#     Compute speed of specified joints
+#
+#     Returns:
+#         Joint speed array
+#     """
+#     # Initialize speed array
+#     joint_speeds = np.zeros(motion_data.shape[0])
+#
+#     # Compute speeds for wrist and ankle joints
+#     for joint_name in wrist_joints + ankle_joints:
+#         if joint_name not in joints:
+#             print(f"Warning: Joint {joint_name} not found. Skipping.")
+#             continue
+#
+#         # Extract joint angles
+#         joint_angles = extract_joint_angles_robust(joints, motion_data, joint_name)
+#
+#         if joint_angles is None:
+#             continue
+#
+#         # Compute derivative (speed) for each rotation channel
+#         for channel, angles in joint_angles.items():
+#             # Compute speed using numerical differentiation
+#             joint_speed = np.abs(np.gradient(angles) / frame_time)
+#             joint_speeds += joint_speed
+#
+#     return joint_speeds
+
+
+# def extract_joint_angles_robust(joints, motion_data, joint_name):
+#     """
+#     Extract rotation angles for a specific joint with error handling
+#     """
+#     if joint_name not in joints:
+#         available_joints = list(joints.keys())
+#         print(f"Joint '{joint_name}' not found.")
+#         print(f"Available joints: {available_joints}")
+#         return None
+#
+#     joint_info = joints[joint_name]
+#     start_idx = joint_info['start_index']
+#     channels = joint_info['channels']
+#
+#     angles = {}
+#     for i, channel in enumerate(channels):
+#         if 'rotation' in channel.lower():
+#             if start_idx + i < motion_data.shape[1]:
+#                 angles[channel] = motion_data[:, start_idx + i]
+#             else:
+#                 print(f"Channel index out of range for {joint_name}.{channel}")
+#
+#     return angles if angles else None
+
+
+# def set_axes_equal(ax):
+#     """Set 3D axes to equal scale for better visualization."""
+#     x_limits = ax.get_xlim3d()
+#     y_limits = ax.get_ylim3d()
+#     z_limits = ax.get_zlim3d()
+#     x_range = max(x_limits) - min(x_limits)
+#     y_range = max(y_limits) - min(y_limits)
+#     z_range = max(z_limits) - min(z_limits)
+#     max_range = max(x_range, y_range, z_range)
+#     mid_x = sum(x_limits) / 2
+#     mid_y = sum(y_limits) / 2
+#     mid_z = sum(z_limits) / 2
+#     ax.set_xlim3d([mid_x - max_range/2, mid_x + max_range/2])
+#     ax.set_ylim3d([mid_y - max_range/2, mid_y + max_range/2])
+#     ax.set_zlim3d([mid_z - max_range/2, mid_z + max_range/2])
+
+
+# def visualize_motion_with_segmentation(file_name,csv_file_path, wrist_joints , ankle_joints,save_dir):
+#
+#     motion_df = pd.read_csv(csv_file_path)
+#     frame_rate = 30
+#     frame_time = 1 / frame_rate
+#     motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=data_dir,
+#                                                                              data_type="position",
+#                                                                              filtering=False)
+#     segments, boundaries = segment_motion_csv(csv_file_path, data_type= "position",
+#                                               wrist_joints = wrist_joints,
+#                                               ankle_joints = ankle_joints,
+#                                               filtering=False)
+#     print(f"len of segments: {len(segments)}")
+#     boundary_frames = [boundaries[0][0]] + [b[1] for b in boundaries]
+#
+#
+#     # # Create time vector
+#     time_vector = np.arange(motion_df.shape[0]) * frame_time
+#
+#     target_joints=["LWrist","LKnee","LElbow","LAnkle","Neck","LShoulder"]
+#
+#     # Create plots
+#     fig, axes = plt.subplots(len(target_joints), 1, figsize=(16, 5 * len(target_joints)))
+#     if len(target_joints) == 1:
+#         axes = [axes]
+#
+#     # Color palette
+#     colors = ['red', 'green', 'blue', 'orange', 'purple', 'brown']
+#
+#     # Iterate through target joints
+#     for i, joint_name in enumerate(target_joints):
+#         columns = [col for col in motion_df.columns if col.startswith(joint_name)]
+#         axis_angle_rep = motion_df[columns]
+#
+#         ax = axes[i]
+#         ax.set_title(f'{joint_name} Joint rep with Motion Segments',
+#                      fontsize=16, fontweight='bold')
+#
+#         # Plot each rotation channel
+#         for idx,column in enumerate(columns):
+#             color = colors[idx % len(colors)]
+#             ax.plot(time_vector,motion_df[column],
+#                     color=color,
+#                     label=f'{column}',
+#                     linewidth=1.5,
+#                     alpha=0.7)
+#
+#         # Plot segment boundaries
+#         for boundary in boundary_frames[1:-1]:  # Exclude first and last
+#             # ax.axvline(x=time_vector[boundary], color='r', linestyle='--', alpha=0.7)
+#             ax.axvline(x=time_vector[int(boundary)], color='r', linestyle='--', alpha=0.7)
+#
+#         # Highlight segments with different colors
+#         segment_colors = plt.cm.viridis(np.linspace(0, 1, len(segments)))
+#         for j, segment in enumerate(segments):
+#             boundary = boundaries[j]
+#             start_time = time_vector[boundary[0]]
+#             end_time = time_vector[boundary[1]]
+#             ax.axvspan(start_time, end_time, color=segment_colors[j], alpha=0.2,
+#                        label=f'Segment {j + 1}')
+#
+#         ax.set_xlabel('Time (seconds)', fontsize=12)
+#         ax.set_ylabel('Angle (degrees)', fontsize=12)
+#         ax.legend(fontsize=10, loc='upper right')
+#         ax.grid(True, alpha=0.3)
+#         ax.set_xlim(0, time_vector[-1])
+#
+#     plt.tight_layout()
+#
+#     figures_dir = os.path.join(save_dir, "motion_segmentation")
+#     os.makedirs(figures_dir, exist_ok=True)
+#     plt.savefig(os.path.join(figures_dir, f"{file_name}.png"),
+#                 dpi=300, bbox_inches='tight')
+#     plt.close()
+#
+#     return segments,boundaries
+
+
+# def calculate_joint_angular_speed(rotation_vectors, frame_rate=30):
+#     """
+#     Calculate angular speed from rotation vectors (exponential maps)
+#
+#     Args:
+#         rotation_vectors: [num_frames, 3] array of rotation vectors
+#                          (one 3D rotation vector per frame)
+#         frame_rate: frames per second (Hz)
+#
+#     Returns:
+#         angular_speeds: [num_frames-1] array of angular speeds (radians/second)
+#     """
+#
+#     dt = 1.0 / frame_rate  # Time between frames
+#
+#     # Get magnitude (angle) of each rotation vector
+#     rotation_angles = np.linalg.norm(rotation_vectors, axis=1)  # [num_frames]
+#
+#     # Compute angular speed between consecutive frames
+#     angular_speeds = np.abs(np.diff(rotation_angles)) / dt
+#
+#     return angular_speeds
+

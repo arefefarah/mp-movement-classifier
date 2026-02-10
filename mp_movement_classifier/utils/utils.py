@@ -289,7 +289,7 @@ def calculate_joint_linear_speed(positions, frame_rate=30):
 #                 # motion_data.append(motion_array)
 #
 #                 # Apply temporal segmentation
-#                 segments, boundaries = segment_motion_csv(
+#                 segments, boundaries = (
 #                     file_path,
 #                     data_type=data_type,
 #                     wrist_joints=['LWrist', 'RWrist'],
@@ -357,57 +357,57 @@ def process_motion_data(folder_path,data_type,filtering ):
 
     return motion_ids,processed_segments, segment_motion_ids
 
-def segment_motion_csv(file_path , data_type, wrist_joints , ankle_joints, filtering ):
-
-
-    if filtering:  # apply butter filter
-        motion_df = pd.read_csv(file_path)
-        smoothed_motion_df = filter_motion_data(motion_df, cutoff_freq=6, sampling_rate=30)
-    else:
-        smoothed_motion_df = pd.read_csv(file_path) # no filter
-
-
-    joint_speeds=0
-    for joint_name in wrist_joints + ankle_joints:
-        columns = [col for col in smoothed_motion_df.columns if col.startswith(joint_name)]
-        selected_df = smoothed_motion_df[columns]
-        vec = selected_df.to_numpy()
-        if data_type=="exp":
-            joint_speed = calculate_joint_angular_speed(vec) # for exp maps
-        elif data_type=="position":
-            joint_speed = calculate_joint_linear_speed(vec) # for 3d position coordinate
-        elif data_type=="quaternion":
-            _, joint_speed = calculate_angular_velocity_quat(vec) ## for quaternion representation
-        else  :
-            raise ValueError("data_type must be exp, position or quaternion")
-
-        joint_speeds += joint_speed
-
-    min_boundary_distance = 4 #1 second for now
-    frame_rate = 30
-    frame_time = 1 / frame_rate
-    min_frames = int(min_boundary_distance *frame_rate)
-    peaks, _ = find_peaks(-joint_speeds, distance=min_frames)
-    boundary_frames = [0] + list(peaks) + [len(joint_speeds) - 1]
-    boundary_frames.sort()
-
-    boundaries = [boundary_frames[i:i + 2] for i in range(len(boundary_frames) - 1)]
-    segments = []
-    filtered_boundaries =[]
-    for boundary in boundaries:
-        seg_df = smoothed_motion_df.iloc[boundary[0]:boundary[1], :]
-        if len(seg_df)> 60:  # 2 second minimum
-            segments.append(seg_df.to_numpy())
-            filtered_boundaries.append(boundary)
-
-    if len(segments)==0: # no peak found
-        segments.append(smoothed_motion_df.to_numpy())
-        filtered_boundaries.append([0,len(smoothed_motion_df)-1])
-
-
-    # segments = [smoothed_motion_df.iloc[boundary[0]:boundary[1], :] for boundary in boundaries]
-
-    return segments,filtered_boundaries
+# def segment_motion_csv(file_path , data_type, wrist_joints , ankle_joints, filtering ):
+#
+#
+#     if filtering:  # apply butter filter
+#         motion_df = pd.read_csv(file_path)
+#         smoothed_motion_df = filter_motion_data(motion_df, cutoff_freq=6, sampling_rate=30)
+#     else:
+#         smoothed_motion_df = pd.read_csv(file_path) # no filter
+#
+#
+#     joint_speeds=0
+#     for joint_name in wrist_joints + ankle_joints:
+#         columns = [col for col in smoothed_motion_df.columns if col.startswith(joint_name)]
+#         selected_df = smoothed_motion_df[columns]
+#         vec = selected_df.to_numpy()
+#         if data_type=="exp":
+#             joint_speed = calculate_joint_angular_speed(vec) # for exp maps
+#         elif data_type=="position":
+#             joint_speed = calculate_joint_linear_speed(vec) # for 3d position coordinate
+#         elif data_type=="quaternion":
+#             _, joint_speed = calculate_angular_velocity_quat(vec) ## for quaternion representation
+#         else  :
+#             raise ValueError("data_type must be exp, position or quaternion")
+#
+#         joint_speeds += joint_speed
+#
+#     min_boundary_distance = 4 #1 second for now
+#     frame_rate = 30
+#     frame_time = 1 / frame_rate
+#     min_frames = int(min_boundary_distance *frame_rate)
+#     peaks, _ = find_peaks(-joint_speeds, distance=min_frames)
+#     boundary_frames = [0] + list(peaks) + [len(joint_speeds) - 1]
+#     boundary_frames.sort()
+#
+#     boundaries = [boundary_frames[i:i + 2] for i in range(len(boundary_frames) - 1)]
+#     segments = []
+#     filtered_boundaries =[]
+#     for boundary in boundaries:
+#         seg_df = smoothed_motion_df.iloc[boundary[0]:boundary[1], :]
+#         if len(seg_df)> 60:  # 2 second minimum
+#             segments.append(seg_df.to_numpy())
+#             filtered_boundaries.append(boundary)
+#
+#     if len(segments)==0: # no peak found
+#         segments.append(smoothed_motion_df.to_numpy())
+#         filtered_boundaries.append([0,len(smoothed_motion_df)-1])
+#
+#
+#     # segments = [smoothed_motion_df.iloc[boundary[0]:boundary[1], :] for boundary in boundaries]
+#
+#     return segments,filtered_boundaries
 
 def read_bvh_files(folder_path):
     bvh_data = []

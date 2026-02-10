@@ -302,7 +302,7 @@ def analyze_feature_pca(
     ax2.set_title('Cumulative Variance Explained', fontsize=14, fontweight='bold')
     ax2.legend(fontsize=10)
     ax2.grid(True, alpha=0.3, linestyle='--')
-    ax2.set_xlim(0, min(50, len(explained_variance_ratio)))
+    ax2.set_xlim(0, min(100, len(explained_variance_ratio)))
     ax2.set_ylim(0, 1.05)
 
     plt.tight_layout()
@@ -501,26 +501,211 @@ def visualize_with_tsne(X, y, out_dir):
     out_path = Path(out_dir) / 'tsne_visualization.png'
     plt.savefig(out_path, dpi=150)
 
-    # plt.figure(figsize=(10, 8))
-    # scatter = plt.scatter(X_tsne[:, 2], X_tsne[:, 3], c=y, cmap="hsv", alpha=0.8)
-    #
-    # # Add a colorbar
-    # plt.colorbar(scatter, label='Motion Type')
-    # plt.xlabel('t-SNE Dimension 3')
-    # plt.ylabel('t-SNE Dimension 4')
-    # plt.title('t-SNE of TMP model features')
-    # unique_motions = np.unique(y)
-    # handles = [plt.Line2D([0], [0], marker='o', color='w',
-    #                       markerfacecolor=plt.cm.hsv(i / len(unique_motions)),
-    #                       markersize=10) for i in range(len(unique_motions))]
-    # plt.legend(handles, unique_motions, title='Motion Types')
-    #
-    # plt.grid(True, alpha=0.3)
-    # plt.tight_layout()
-    # out_path = Path(out_dir) / 'tsne_visualization_3&4deimension.png'
-    # plt.savefig(out_path, dpi=150)
-
     return tsne
+
+def calculate_rdm(
+        X: np.ndarray,
+        y: np.ndarray,
+        out_dir: Path,
+        filename: str = "rdm_heatmap.png"
+) -> dict:
+    """
+    Calculate and plot Representational Dissimilarity Matrix (RDM) among different movements.
+
+    The RDM is computed as 1 - Pearson correlation coefficient between average feature
+    vectors of different motion types.
+
+    Args:
+        X: Feature matrix [n_segments, n_features]
+        y: Motion ID labels for each segment
+        out_dir: Directory to save plots
+        filename: Name for the saved plot
+
+    Returns:
+        dict: Dictionary containing RDM, correlation matrix, and statistics
+    """
+
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Get unique motion IDs and sort them
+    unique_motions = np.unique(y)
+    n_motions = len(unique_motions)
+
+
+    # Compute average feature vector for each motion type
+    motion_means = np.zeros((n_motions, X.shape[1]))
+    motion_counts = np.zeros(n_motions, dtype=int)
+
+    for i, motion_id in enumerate(unique_motions):
+        motion_mask = (y == motion_id)
+        motion_means[i] = np.mean(X[motion_mask], axis=0)
+        motion_counts[i] = np.sum(motion_mask)
+        print(f"  - Motion {motion_id}: {motion_counts[i]} segments")
+
+    # Calculate pairwise Pearson correlation between motion means
+    from scipy.stats import pearsonr
+
+    correlation_matrix = np.zeros((n_motions, n_motions))
+    for i in range(n_motions):
+        for j in range(n_motions):
+            if i == j:
+                correlation_matrix[i, j] = 1.0
+            else:
+                corr, _ = pearsonr(motion_means[i], motion_means[j])
+                correlation_matrix[i, j] = corr
+
+    # Convert to dissimilarity: RDM = 1 - r
+    rdm = 1 - correlation_matrix
+
+    # Print statistics
+    print(f"\nRDM Statistics:")
+    # Get upper triangle (excluding diagonal) for statistics
+    triu_indices = np.triu_indices(n_motions, k=1)
+    rdm_values = rdm[triu_indices]
+
+    print(f"  - Mean dissimilarity: {np.mean(rdm_values):.4f}")
+    print(f"  - Std dissimilarity: {np.std(rdm_values):.4f}")
+    print(f"  - Min dissimilarity: {np.min(rdm_values):.4f}")
+    print(f"  - Max dissimilarity: {np.max(rdm_values):.4f}")
+
+    # Find most similar and dissimilar motion pairs
+    min_idx = np.argmin(rdm_values)
+    max_idx = np.argmax(rdm_values)
+
+    # Map back to original indices
+    i_min, j_min = triu_indices[0][min_idx], triu_indices[1][min_idx]
+    i_max, j_max = triu_indices[0][max_idx], triu_indices[1][max_idx]
+
+    print(f"\n  Most similar motions: {unique_motions[i_min]} <-> {unique_motions[j_min]} "
+          f"(dissimilarity: {rdm[i_min, j_min]:.4f})")
+    print(f"  Most dissimilar motions: {unique_motions[i_max]} <-> {unique_motions[j_max]} "
+          f"(dissimilarity: {rdm[i_max, j_max]:.4f})")
+
+    # --- Plot 1: RDM Heatmap ---
+    fig, ax = plt.subplots(figsize=(12, 10))
+
+    im = ax.imshow(rdm, cmap='viridis', aspect='auto', vmin=0, vmax=2)
+
+    # Add colorbar
+    cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label('Dissimilarity (1 - r)', rotation=270, labelpad=20, fontsize=12)
+
+    # Set ticks and labels
+    ax.set_xticks(np.arange(n_motions))
+    ax.set_yticks(np.arange(n_motions))
+    ax.set_xticklabels(unique_motions, rotation=45, ha='right')
+    ax.set_yticklabels(unique_motions)
+
+    # Add grid
+    ax.set_xticks(np.arange(n_motions) - 0.5, minor=True)
+    ax.set_yticks(np.arange(n_motions) - 0.5, minor=True)
+    ax.grid(which='minor', color='white', linestyle='-', linewidth=0.5)
+
+    # Labels and title
+    ax.set_xlabel('Motion Type', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Motion Type', fontsize=12, fontweight='bold')
+    ax.set_title('Representational Dissimilarity Matrix (RDM)\nDissimilarity = 1 - Pearson r',
+                 fontsize=14, fontweight='bold', pad=20)
+
+    # Add text annotations for values
+    if n_motions <= 20:  # Only add text if not too many motions
+        for i in range(n_motions):
+            for j in range(n_motions):
+                text = ax.text(j, i, f'{rdm[i, j]:.2f}',
+                               ha="center", va="center",
+                               color="white" if rdm[i, j] > 1.0 else "black",
+                               fontsize=8)
+
+    plt.tight_layout()
+    rdm_path = out_dir / filename
+    plt.savefig(rdm_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"\n  ✓ Saved RDM heatmap: {rdm_path}")
+
+    # --- Plot 2: Correlation Matrix (for comparison) ---
+    fig, ax = plt.subplots(figsize=(12, 10))
+
+    im = ax.imshow(correlation_matrix, cmap='RdBu_r', aspect='auto', vmin=-1, vmax=1)
+
+    cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label('Pearson Correlation (r)', rotation=270, labelpad=20, fontsize=12)
+
+    ax.set_xticks(np.arange(n_motions))
+    ax.set_yticks(np.arange(n_motions))
+    ax.set_xticklabels(unique_motions, rotation=45, ha='right')
+    ax.set_yticklabels(unique_motions)
+
+    ax.set_xticks(np.arange(n_motions) - 0.5, minor=True)
+    ax.set_yticks(np.arange(n_motions) - 0.5, minor=True)
+    ax.grid(which='minor', color='gray', linestyle='-', linewidth=0.5)
+
+    ax.set_xlabel('Motion Type', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Motion Type', fontsize=12, fontweight='bold')
+    ax.set_title('Correlation Matrix Between Motion Types\nPearson Correlation',
+                 fontsize=14, fontweight='bold', pad=20)
+
+    if n_motions <= 20:
+        for i in range(n_motions):
+            for j in range(n_motions):
+                text = ax.text(j, i, f'{correlation_matrix[i, j]:.2f}',
+                               ha="center", va="center",
+                               color="white" if abs(correlation_matrix[i, j]) > 0.5 else "black",
+                               fontsize=8)
+
+    plt.tight_layout()
+    corr_path = out_dir / "correlation_matrix.png"
+    plt.savefig(corr_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"  ✓ Saved correlation matrix: {corr_path}")
+
+    # --- Plot 3: Hierarchical clustering dendrogram ---
+    from scipy.cluster.hierarchy import dendrogram, linkage
+    from scipy.spatial.distance import squareform
+
+    # Convert RDM to condensed distance matrix for linkage
+    condensed_rdm = squareform(rdm, checks=False)
+
+    # Perform hierarchical clustering
+    linkage_matrix = linkage(condensed_rdm, method='average')
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    dendrogram(
+        linkage_matrix,
+        labels=unique_motions,
+        ax=ax,
+        leaf_font_size=10,
+        color_threshold=0.7 * max(linkage_matrix[:, 2])
+    )
+
+    ax.set_xlabel('Motion Type', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Dissimilarity (1 - r)', fontsize=12, fontweight='bold')
+    ax.set_title('Hierarchical Clustering of Motion Types',
+                 fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3, axis='y')
+
+    plt.tight_layout()
+    dendrogram_path = out_dir / "rdm_dendrogram.png"
+    plt.savefig(dendrogram_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"  ✓ Saved dendrogram: {dendrogram_path}")
+
+
+    # Return results dictionary
+    results = {
+        'rdm': rdm,
+        'correlation_matrix': correlation_matrix,
+        'motion_means': motion_means,
+        'unique_motions': unique_motions,
+        'motion_counts': motion_counts,
+        'mean_dissimilarity': np.mean(rdm_values),
+        'std_dissimilarity': np.std(rdm_values),
+        'min_dissimilarity': np.min(rdm_values),
+        'max_dissimilarity': np.max(rdm_values),
+        'linkage_matrix': linkage_matrix
+    }
+
+    return results
 
 def main():
     global data_dir, model_path
@@ -543,7 +728,9 @@ def main():
 
     # based on TMP code: the format of data=list(segment_data[signals,time])
     num_segments = len(processed_segments)
+    print(f"Number of segments: {num_segments}")
     num_signals = processed_segments[0].shape[0]
+    print(f"Number of signals: {num_signals}")
 
     model = load_model_with_full_state(
         model_path,
@@ -561,10 +748,6 @@ def main():
     y = np.array(segment_motion_ids)
     print(f"Feature matrix shape: {X.shape}")
     print(f"Label array shape: {y.shape}")
-    print(f"Unique motion IDs: {np.unique(y)}")
-    print("\n" + "=" * 70)
-    print("PERFORMING PCA ANALYSIS ON FEATURE MATRIX")
-    print("=" * 70)
 
     # Create feature names for better interpretability
     feature_names = []
@@ -586,6 +769,11 @@ def main():
         y=y,
         out_dir=Path(out_dir))
 
+    rdm_results = calculate_rdm(
+        X=X,
+        y=y,
+        out_dir=Path(out_dir),)
+
     # OPTIONAL: Use PCA features for classification
     # Uncomment the following lines if you want to classify using reduced features
 
@@ -604,9 +792,6 @@ def main():
     scaler.fit_transform(X_train)
     X_train_scaled = scaler.transform(X_train)
     X_test_scaled = scaler.transform(X_test)
-    # clf = RandomForestClassifier(n_estimators=100, random_state=42)
-    # clf = SVC(random_state=42)
-    # clf = SVC(C=0.1, kernel='rbf')
     clf = LinearSVC(C=1.0, penalty='l2', dual=True)
     clf.fit(X_train_scaled, y_train)
 

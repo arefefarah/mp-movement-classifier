@@ -200,7 +200,7 @@ def weights_barplot_across_channels(weights, motion_ids, motion_names_dict=None,
         color_map[motion_id] = fixed_colors[idx % len(fixed_colors)]
 
     # Number of MPs to display
-    n_mps_to_show = min(5, num_MPs)
+    n_mps_to_show = min(4, num_MPs)
 
     # Iterate over each channel
     for joint_idx in range(num_joints_coord):
@@ -210,6 +210,7 @@ def weights_barplot_across_channels(weights, motion_ids, motion_names_dict=None,
         # Calculate positions and data for all movements
         all_avg_weights = []
         all_std_weights = []
+        all_median_weights = []
         x_positions = []
         bar_colors = []
         x_labels = []
@@ -224,9 +225,11 @@ def weights_barplot_across_channels(weights, motion_ids, motion_names_dict=None,
             # Calculate statistics across segments
             avg_weights = motion_weights.mean(axis=0)  # shape: (5,)
             std_weights = motion_weights.std(axis=0)  # shape: (5,)
+            median_weights = np.median(motion_weights, axis=0)
 
             all_avg_weights.extend(avg_weights)
             all_std_weights.extend(std_weights)
+            all_median_weights.extend(median_weights)
 
             # Create x positions for this movement's 5 MPs (grouped together)
             movement_x_positions = np.arange(current_x, current_x + n_mps_to_show)
@@ -245,10 +248,17 @@ def weights_barplot_across_channels(weights, motion_ids, motion_names_dict=None,
 
         # Plot all bars
         bars = ax.bar(x_positions, all_avg_weights,
-                      yerr=all_std_weights, capsize=4,
+                      yerr=all_std_weights,
+                      capsize=4,
                       color=bar_colors, alpha=0.75,
                       edgecolor='black', linewidth=0.5,
                       width=0.8)
+        #plot median
+        # bars = ax.bar(x_positions, all_median_weights,
+        #               capsize=4,
+        #               color=bar_colors, alpha=0.75,
+        #               edgecolor='black', linewidth=0.5,
+        #               width=0.8)
 
         ax.set_xticks(x_positions)
         ax.set_xticklabels(x_labels, fontsize=9, rotation=45, ha='right')
@@ -281,7 +291,7 @@ def weights_barplot_across_channels(weights, motion_ids, motion_names_dict=None,
                               alpha=0.3, edgecolor='black', linewidth=1))
         ax.set_ylabel('Average Weight ± Std', fontsize=13, fontweight='bold')
         joint_coord_name = CHANNEL_NAMES[joint_idx] if 'CHANNEL_NAMES' in globals() else f'Channel {joint_idx}'
-        ax.set_title(f'Weight Distribution of First 5 MPs - {joint_coord_name}',
+        ax.set_title(f'Weight Distribution of First {n_mps_to_show} MPs - {joint_coord_name}',
                      fontsize=15, fontweight='bold', pad=40)  # Increased pad for movement labels
 
         from matplotlib.patches import Patch
@@ -305,373 +315,6 @@ def weights_barplot_across_channels(weights, motion_ids, motion_names_dict=None,
         plt.close()
 
         print(f"Saved: {filename}")
-# def weights_barplot_across_channels(weights, motion_ids, motion_names_dict=None, save_dir='./plots'):
-#     """
-#     Plot weight distributions across channels.
-#
-#     For each channel, creates one figure showing the first 5 MP weights
-#     for all movements. Each movement is represented by a distinct color.
-#
-#     Parameters:
-#     -----------
-#     weights : ndarray, shape (num_segments, num_joints_coord, num_MPs)
-#         Weight array
-#     motion_ids : ndarray, shape (num_segments,)
-#         Motion identifier for each segment
-#     motion_names_dict : dict, optional
-#         Mapping from motion_id to readable names
-#     save_dir : str
-#         Directory to save plots
-#     """
-#     from pathlib import Path
-#     import matplotlib.pyplot as plt
-#     import numpy as np
-#
-#     Path(save_dir).mkdir(parents=True, exist_ok=True)
-#
-#     num_segments, num_joints_coord, num_MPs = weights.shape
-#     unique_motions = np.unique(motion_ids)
-#     n_motions = len(unique_motions)
-#
-#     # Create motion labels
-#     if motion_names_dict:
-#         motion_labels = [motion_names_dict.get(m, f'Motion {m}') for m in unique_motions]
-#     else:
-#         motion_labels = [f'Motion {m}' for m in unique_motions]
-#
-#     # Generate distinct colors for each movement
-#     colors = plt.cm.tab10(np.linspace(0, 1, n_motions))
-#
-#     # Number of MPs to display
-#     n_mps_to_show = min(5, num_MPs)
-#
-#     # Iterate over each channel
-#     for joint_idx in range(num_joints_coord):
-#         fig, ax = plt.subplots(figsize=(14, 7))
-#
-#         # Calculate bar width (leave some space between MP groups)
-#         bar_width = 0.75 / n_motions  # Total width per MP is 0.75
-#
-#         # For each movement, plot its 5 MP weights
-#         for motion_idx, motion_id in enumerate(unique_motions):
-#             # Get all segments for this motion
-#             mask = motion_ids == motion_id
-#             motion_weights = weights[mask, joint_idx, :n_mps_to_show]  # shape: (n_segments, 5)
-#
-#             # Calculate statistics across segments
-#             avg_weights = motion_weights.mean(axis=0)  # shape: (5,)
-#             std_weights = motion_weights.std(axis=0)  # shape: (5,)
-#
-#             # Calculate x positions for this movement's bars
-#             # Center the bars for each MP group
-#             offset = (motion_idx - (n_motions - 1) / 2) * bar_width
-#             x_positions = np.arange(n_mps_to_show) + offset
-#
-#             # Plot bars with error bars
-#             ax.bar(x_positions, avg_weights, width=bar_width,
-#                    yerr=std_weights, capsize=4,
-#                    color=colors[motion_idx], alpha=0.75,
-#                    label=motion_labels[motion_idx],
-#                    edgecolor='black', linewidth=0.5)
-#
-#         # Customize x-axis
-#         ax.set_xticks(np.arange(n_mps_to_show))
-#         ax.set_xticklabels([f'MP {i + 1}' for i in range(n_mps_to_show)], fontsize=11)
-#         ax.set_xlabel('Movement Primitive', fontsize=13, fontweight='bold')
-#
-#         # Customize y-axis
-#         ax.set_ylabel('Average Weight ± Std', fontsize=13, fontweight='bold')
-#
-#         # Title
-#         joint_coord_name = CHANNEL_NAMES[joint_idx] if 'CHANNEL_NAMES' in globals() else f'Channel {joint_idx}'
-#         ax.set_title(f'Weight Distribution of First 5 MPs - {joint_coord_name}',
-#                      fontsize=15, fontweight='bold', pad=20)
-#
-#         # Add legend with better formatting
-#         ax.legend(loc='upper right', fontsize=10, framealpha=0.9,
-#                   title='Movements', title_fontsize=11)
-#
-#         # Add grid for better readability
-#         ax.grid(axis='y', alpha=0.3, linestyle='--', linewidth=0.7)
-#         ax.set_axisbelow(True)  # Grid behind bars
-#
-#         # Add horizontal line at y=0 for reference
-#         ax.axhline(y=0, color='black', linewidth=0.8, linestyle='-')
-#
-#         # Adjust layout
-#         plt.tight_layout()
-#
-#         # Save figure
-#         filename = f'{save_dir}/channel_{joint_coord_name.replace(" ", "_")}_weights.png'
-#         plt.savefig(filename, dpi=200, bbox_inches='tight', facecolor='white')
-#         plt.close()
-#
-#         print(f"Saved: {filename}")
-
-# def weights_barplot_across_channels(weights, motion_ids, motion_names_dict=None,save_dir='./plots'):
-#     Path(save_dir).mkdir(parents=True, exist_ok=True)
-#
-#     num_segments, num_joints_coord, num_MPs = weights.shape
-#
-#     unique_motions = np.unique(motion_ids)
-#
-#     if motion_names_dict:
-#         motion_labels = [motion_names_dict.get(m, f'Motion {m}') for m in unique_motions]
-#     else:
-#         motion_labels = [f'Motion {m}' for m in unique_motions]
-#
-#     # for each channel (iterate over num_joints_coord) we have one plot show first 5 MPs weight bars with std across all subject for all movments
-#     # (each moveent with one color in one plot  with legend table)
-#
-#     for joint_idx in range(num_joints_coord):  # Show first 5 MPs
-#         n_motions = len(unique_motions)
-#
-#         for i, motion_id in enumerate(unique_motions):
-#             mask = motion_ids == motion_id
-#             motion_weights = weights[mask, joint_idx, :5]  # [n_segments, first 5 mp]
-#
-#             # Average across segments of this motion for each of 5 MPs
-#             avg_weights = motion_weights.mean(axis=0)  # [num_mps]
-#             std_weights = motion_weights.std(axis=0)
-#
-#             plt.figure(figsize=(10, 6))
-#             joint_coord_name = CHANNEL_NAMES[joint_idx]
-#             plt.bar(
-#                     yerr=std_weights, width=0.5, capsize=3,
-#                     color='steelblue', alpha=0.7)
-#             plt.ylabel(f'Average Weight ', fontsize=10)
-#             plt.xticks(rotation=45, ha='right', fontsize=6)  # 'ha' for horizontal alignment
-#             plt.xlabel('')
-#             plt.title(f'First 5 MP Weights distribution for {joint_coord_name} channel across different movements',
-#                       fontsize=12, y=1.02)
-#             plt.tight_layout()
-#             plt.savefig(f'{save_dir}/channel_{joint_coord_name}_weights.png', dpi=150, bbox_inches='tight')
-#             plt.close()
-
-
-#
-#
-# # ============================================================================
-# # ANALYSIS 2: Variance of features (one coordinate) among joints per movement
-# # ============================================================================
-#
-# def analyze_coordinate_variance(weights, motion_ids, motion_names_dict=None,
-#                                 coord_idx=0, save_dir='./plots'):
-#     """
-#     Analyze variance of one coordinate (default: Z) among all joints for each movement.
-#
-#     Args:
-#         weights: [num_segments, num_joints, num_coords, num_MPs]
-#         motion_ids: [num_segments] array of motion IDs
-#         coord_idx: 0=X, 1=Y, 2=Z
-#     """
-#     Path(save_dir).mkdir(parents=True, exist_ok=True)
-#
-#     num_segments, num_joints, num_coords, num_MPs = weights.shape
-#     coord_name = COORD_NAMES[coord_idx]
-#
-#     unique_motions = np.unique(motion_ids)
-#
-#     # Get motion names
-#     if motion_names_dict:
-#         motion_labels = [motion_names_dict.get(m, f'Motion {m}') for m in unique_motions]
-#     else:
-#         motion_labels = [f'Motion {m}' for m in unique_motions]
-#
-#     # Extract weights for the specified coordinate
-#     coord_weights = weights[:, :, coord_idx, :]  # [num_segments, num_joints, num_MPs]
-#
-#     results = {}
-#
-#     for motion_id, motion_label in zip(unique_motions, motion_labels):
-#         mask = motion_ids == motion_id
-#         motion_weights = coord_weights[mask]  # [n_segs, num_joints, num_MPs]
-#
-#         # For each MP, calculate variance across joints
-#         variances_per_mp = []
-#         for mp_idx in range(num_MPs):
-#             mp_weights = motion_weights[:, :, mp_idx]  # [n_segs, num_joints]
-#             # Variance across joints for each segment, then average
-#             var_across_joints = np.var(mp_weights, axis=1).mean()
-#             variances_per_mp.append(var_across_joints)
-#
-#         results[motion_id] = {
-#             'label': motion_label,
-#             'variances': np.array(variances_per_mp),
-#             'mean_variance': np.mean(variances_per_mp),
-#             'std_variance': np.std(variances_per_mp)
-#         }
-#
-#     # Plot variance across MPs for each movement
-#     fig, ax = plt.subplots(figsize=(14, 7))
-#
-#     x = np.arange(num_MPs)
-#     width = 0.8 / len(unique_motions)
-#
-#     colors = plt.cm.Set3(np.linspace(0, 1, len(unique_motions)))
-#
-#     for i, motion_id in enumerate(unique_motions):
-#         variances = results[motion_id]['variances']
-#         label = results[motion_id]['label']
-#         offset = (i - len(unique_motions) / 2) * width + width / 2
-#         ax.bar(x + offset, variances, width,
-#                label=label, alpha=0.8, color=colors[i])
-#
-#     ax.set_xlabel('Movement Primitive', fontsize=12, weight='bold')
-#     ax.set_ylabel(f'Variance of {coord_name}-coordinate Across Joints', fontsize=12, weight='bold')
-#     ax.set_title(f'Variance of {coord_name}-coordinate Among All Joints per Movement',
-#                  fontsize=14, weight='bold')
-#     ax.set_xticks(x)
-#     ax.set_xticklabels([f'MP{i + 1}' for i in range(num_MPs)], rotation=45, ha='right')
-#     ax.legend(loc='upper right', fontsize=10)
-#     ax.grid(axis='y', alpha=0.3)
-#
-#     plt.tight_layout()
-#     plt.savefig(f'{save_dir}/variance_{coord_name}_across_joints.png', dpi=150, bbox_inches='tight')
-#     plt.close()
-#
-#     # Print summary statistics
-#     print(f"\n{'=' * 60}")
-#     print(f"VARIANCE ANALYSIS: {coord_name}-coordinate across joints")
-#     print(f"{'=' * 60}")
-#     for motion_id in unique_motions:
-#         stats_data = results[motion_id]
-#         print(f"\n{stats_data['label']}:")
-#         print(f"  Mean variance: {stats_data['mean_variance']:.6f}")
-#         print(f"  Std variance:  {stats_data['std_variance']:.6f}")
-#
-#     print(f"\n✓ Saved variance analysis plot to {save_dir}")
-#
-#     return results
-#
-#
-# # ============================================================================
-# # ANALYSIS 3: Average Z-variance for each joint & significance test
-# # ============================================================================
-#
-# def analyze_joint_coord_variance(weights, motion_ids, motion_names_dict=None, coord_idx=0,save_dir='./plots'):
-#     """
-#     Calculate average Z-coordinate variance for each joint across MPs.
-#     Test statistical significance using one-way ANOVA.
-#
-#     Args:
-#         weights: [num_segments, num_joints, num_coords, num_MPs]
-#         motion_ids: [num_segments] array of motion IDs
-#     """
-#     Path(save_dir).mkdir(parents=True, exist_ok=True)
-#
-#     num_segments, num_joints, num_coords, num_MPs = weights.shape
-#
-#     # Extract Z-coordinate weights: [num_segments, num_joints, num_MPs]
-#     z_weights = weights[:, :, coord_idx, :]
-#
-#     # Calculate variance of each joint across MPs (for each segment)
-#     joint_variances = []
-#     for joint_idx in range(num_joints):
-#         joint_z = z_weights[:, joint_idx, :]  # [num_segments, num_MPs]
-#         # Variance across MPs for each segment
-#         var_per_segment = np.var(joint_z, axis=1)  # [num_segments]
-#         joint_variances.append(var_per_segment)
-#
-#     joint_variances = np.array(joint_variances)  # [num_joints, num_segments]
-#
-#     # Average variance for each joint
-#     avg_joint_variances = joint_variances.mean(axis=1)  # [num_joints]
-#     std_joint_variances = joint_variances.std(axis=1)
-#
-#     # Statistical significance test: Are variances significantly different across joints?
-#     # Use one-way ANOVA
-#     f_stat, p_value = stats.f_oneway(*[joint_variances[i] for i in range(num_joints)])
-#
-#     # Create figure with 3 subplots
-#     fig = plt.figure(figsize=(18, 6))
-#
-#     # Subplot 1: Bar plot of average variance per joint
-#     ax1 = plt.subplot(1, 3, 1)
-#     colors = plt.cm.viridis(np.linspace(0, 1, num_joints))
-#     bars = ax1.bar(range(num_joints), avg_joint_variances,
-#                    yerr=std_joint_variances,
-#                    color=colors, alpha=0.7, capsize=5)
-#     ax1.set_xticks(range(num_joints))
-#     ax1.set_xticklabels(CHANNEL_NAMES, rotation=45, ha='right', fontsize=9)
-#     ax1.set_ylabel('Average Z-coordinate Variance', fontsize=11, weight='bold')
-#     ax1.set_title('Average Z-Variance Among MPs\nfor Each Joint', fontsize=12, weight='bold')
-#     ax1.grid(axis='y', alpha=0.3)
-#
-#     # Add significance annotation
-#     sig_text = f'ANOVA: F={f_stat:.2f}, p={p_value:.2e}\n' + \
-#                ('**SIGNIFICANT**' if p_value < 0.05 else 'Not Significant')
-#     ax1.text(0.98, 0.98, sig_text,
-#              transform=ax1.transAxes, ha='right', va='top',
-#              fontsize=10, weight='bold',
-#              bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.7))
-#
-#     # Subplot 2: Box plot showing distribution of variances
-#     ax2 = plt.subplot(1, 3, 2)
-#     bp = ax2.boxplot([joint_variances[i] for i in range(num_joints)],
-#                      labels=JOINT_NAMES, patch_artist=True, showfliers=False)
-#     for patch, color in zip(bp['boxes'], colors):
-#         patch.set_facecolor(color)
-#         patch.set_alpha(0.6)
-#     ax2.set_xticklabels(JOINT_NAMES, rotation=45, ha='right', fontsize=9)
-#     ax2.set_ylabel(f'{COORD_NAMES[coord_idx]}-coordinate Variance Distribution', fontsize=11, weight='bold')
-#     ax2.set_title(f'Distribution of {COORD_NAMES[coord_idx]}-Variance\nfor Each Joint', fontsize=12, weight='bold')
-#     ax2.grid(axis='y', alpha=0.3)
-#
-#     # Subplot 3: Heatmap of variance per joint per motion
-#     ax3 = plt.subplot(1, 3, 3)
-#     unique_motions = np.unique(motion_ids)
-#     variance_matrix = np.zeros((len(unique_motions), num_joints))
-#
-#     for i, motion_id in enumerate(unique_motions):
-#         mask = motion_ids == motion_id
-#         motion_z_weights = z_weights[mask]  # [n_segs, num_joints, num_MPs]
-#         for j in range(num_joints):
-#             joint_z = motion_z_weights[:, j, :]
-#             variance_matrix[i, j] = np.var(joint_z, axis=1).mean()
-#
-#     im = ax3.imshow(variance_matrix, aspect='auto', cmap='YlOrRd')
-#     ax3.set_xticks(range(num_joints))
-#     ax3.set_xticklabels(JOINT_NAMES, rotation=45, ha='right', fontsize=9)
-#     ax3.set_yticks(range(len(unique_motions)))
-#
-#     if motion_names_dict:
-#         motion_labels = [motion_names_dict.get(m, f'Motion {m}')[:15]
-#                          for m in unique_motions]
-#     else:
-#         motion_labels = [f'Motion {m}' for m in unique_motions]
-#     ax3.set_yticklabels(motion_labels, fontsize=9)
-#     ax3.set_title(f'{COORD_NAMES[coord_idx]}-Variance Heatmap\n(Motion × Joint)', fontsize=12, weight='bold')
-#
-#     # Add colorbar
-#     cbar = plt.colorbar(im, ax=ax3)
-#     cbar.set_label('Variance', fontsize=10)
-#
-#     plt.tight_layout()
-#     plt.savefig(f'{save_dir}/joint_{COORD_NAMES[coord_idx]}_variance_analysis.png', dpi=150, bbox_inches='tight')
-#     plt.close()
-#
-#     # Print detailed results
-#     print(f"\n{'=' * 60}")
-#     print(f"Z-VARIANCE ANALYSIS FOR EACH JOINT")
-#     print(f"{'=' * 60}")
-#     print(f"\n{'Joint':<15} {'Avg Variance':<15} {'Std Dev':<15}")
-#     print(f"{'-' * 45}")
-#     for i in range(num_joints):
-#         print(f"{JOINT_NAMES[i]:<15} {avg_joint_variances[i]:<15.6f} {std_joint_variances[i]:<15.6f}")
-#
-#     print(f"\n{'=' * 60}")
-#     print(f"STATISTICAL SIGNIFICANCE TEST (One-Way ANOVA)")
-#     print(f"{'=' * 60}")
-#     print(f"F-statistic: {f_stat:.4f}")
-#     print(f"P-value:     {p_value:.2e}")
-#     print(f"Result:      {'**SIGNIFICANT** (p < 0.05)' if p_value < 0.05 else 'NOT SIGNIFICANT (p >= 0.05)'}")
-#     print(f"\nInterpretation: The Z-coordinate variances across joints are")
-#     print(f"                {'statistically different' if p_value < 0.05 else 'not statistically different'}")
-#
-#     print(f"\n✓ Saved joint Z-variance analysis to {save_dir}")
-#
-#     return avg_joint_variances, std_joint_variances, f_stat, p_value
 
 
 def vis_median_weights_movements(weights, motion_ids, motion_names_dict=None,save_dir='./plots'):

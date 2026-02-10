@@ -10,9 +10,9 @@ import os
 from collections import defaultdict
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC,LinearSVC
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.linear_model import LogisticRegression
-from sklearn.svm import SVC
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -22,6 +22,7 @@ from sklearn.model_selection import cross_val_score
 from sklearn.decomposition import PCA
 from pathlib import Path
 from mp_movement_classifier.utils import config
+from mp_movement_classifier.classification.classification import calculate_rdm
 from mp_movement_classifier.utils.utils import (
     load_model_with_full_state,
     process_motion_data,
@@ -425,7 +426,7 @@ def train_classifiers(X_train, y_train, X_test, y_test):
         'Random Forest': RandomForestClassifier(n_estimators=100, max_depth=10,
                                                 random_state=42),
         'Logistic Regression': LogisticRegression(max_iter=1000, random_state=42),
-        'SVM': SVC(kernel='rbf', random_state=42),
+        'SVM': LinearSVC(C=1.0, penalty='l2', dual=True), #kernel='rbf', random_state=42),
         'MLP': MLPClassifier(hidden_layer_sizes=(128, 64), max_iter=500,
                              random_state=42)
     }
@@ -447,11 +448,12 @@ def train_classifiers(X_train, y_train, X_test, y_test):
             'cv_std': cv_scores.std(),
             'predictions': y_pred,
             'report': classification_report(y_test, y_pred, output_dict=True),
+            'report_str': classification_report(y_test, y_pred),
             'confusion_matrix': confusion_matrix(y_test, y_pred)
         }
 
         print(f"{name} CV Accuracy: {cv_scores.mean():.4f} (+/- {cv_scores.std():.4f})")
-        print(classification_report(y_test, y_pred))
+        # print(classification_report(y_test, y_pred))
 
     return results
 
@@ -659,26 +661,32 @@ def main():
     print(f"Model parameters: {n_params:,}")
 
     # Step 4: Train autoencoder
-    print("\n[4/7] Training autoencoder...")
-    model, train_losses, val_losses = train_autoencoder(
-        model, train_loader, val_loader,
-        n_epochs=CONFIG['n_epochs'],
-        lr=CONFIG['lr'],
-        device=CONFIG['device'],
-        save_path=MODEL_SAVE_DIR / 'best_autoencoder.pt'
-    )
+    # print("\n[4/7] Training autoencoder...")
+    # model, train_losses, val_losses = train_autoencoder(
+    #     model, train_loader, val_loader,
+    #     n_epochs=CONFIG['n_epochs'],
+    #     lr=CONFIG['lr'],
+    #     device=CONFIG['device'],
+    #     save_path=MODEL_SAVE_DIR / 'best_autoencoder.pt'
+    # )
 
-    # Plot training curves
-    fig = plot_training_curves(train_losses, val_losses)
-    fig.savefig(RESULTS_DIR / 'training_curves.png', dpi=300, bbox_inches='tight')
-    plt.close()
+    # # Plot training curves
+    # fig = plot_training_curves(train_losses, val_losses)
+    # fig.savefig(RESULTS_DIR / 'training_curves.png', dpi=300, bbox_inches='tight')
+    # plt.close()
+
+    print("\n[4/7] loading autoencoder, skip training...")
+    checkpoint = torch.load(MODEL_SAVE_DIR / 'best_autoencoder.pt')
+    model.load_state_dict(checkpoint['model_state_dict'])
+    # Move to device and set to evaluation mode
+    model = model.to(CONFIG['device'])
 
     # Step 5: Extract representations
     print("\n[5/7] Extracting latent representations...")
     train_repr, train_labels = extract_representations(model, train_loader, CONFIG['device'])
     test_repr, test_labels = extract_representations(model, test_loader, CONFIG['device'])
 
-    print(f"Representation shape: {train_repr.shape}")
+    print(f"Representation shape for x_train: {train_repr.shape}")
 
     # Step 6: Visualize
     print("\n[6/7] Generating visualizations...")
@@ -702,6 +710,16 @@ def main():
     # Step 7: Classification
     print("\n[7/7] Training classifiers on learned representations...")
     results = train_classifiers(train_repr, train_labels, test_repr, test_labels)
+    rdm_results = calculate_rdm(
+        X=train_repr,
+        y=train_labels,
+        out_dir=RESULTS_DIR)
+    svm_report = results['SVM']['report_str']
+    path = os.path.join(RESULTS_DIR, "classification_report_svm.txt")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(svm_report)
+
 
     # Plot confusion matrices
     fig, axes = plt.subplots(2, 2, figsize=(15, 15))
