@@ -19,6 +19,9 @@ from sklearn.decomposition import PCA
 from pathlib import Path
 from mp_movement_classifier.utils import config
 from mp_movement_classifier.classification.classification import calculate_rdm
+from mp_movement_classifier.tmp_extraction.weight_visulaization import (extract_and_save_avg_weights_for_motions,
+                                                                        load_motion_mapping,
+                                                                        weights_barplot_across_channels)
 from mp_movement_classifier.utils.utils import (
     load_model_with_full_state,
     process_motion_data,
@@ -27,6 +30,9 @@ from mp_movement_classifier.utils.utils import (
     save_model_with_full_state,
 
 )
+from mp_movement_classifier.benchmark_analysis.lda_analysis import run_lda_analysis
+from posture_removal_experiment import run_posture_removal_experiment
+
 
 
 def shifted_legendre_polynomial(degree, r):
@@ -685,11 +691,11 @@ def _plot_distance_matrix(results, save_dir):
 def main():
 
     num_MPs = 5
-    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_pymotion_position_mp_model_{num_MPs}_phase_two")
+    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_exponential_mp_model_{num_MPs}_tpoints_30_phase_two")
     out_dir = os.path.join(model_dir, "legandre_analysis")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    folder_path = "./../../data/pymotion_position_csv_files"
+    folder_path = "./../../data/pymotion_exponential_csv_files"
     motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=folder_path,
                                                                              data_type = "position",
                                                                              filtering= False)
@@ -700,17 +706,39 @@ def main():
 
     max_degree = 1  # for polynomial degrees as basis function , For 10 degrees (0 to 9)
     coefficients, errors = process_with_legendre_basis(processed_segments, max_degree)
+    coefficients_array = np.stack(coefficients, axis=0)
+    # coefficients_array shape (num_segments,n_joints, max_degree+1)
 
-    # len(coefficients)  # 6447
-    # coefficients[0].shape  # (51,6)
-    # X = np.array([coef.flatten() for coef in coefficients])
-    # X.shape  # (6547, 306)
+    # results = analyze_first_degree_coefficients(
+    #     coefficients,
+    #     segment_motion_ids,
+    #     save_dir=out_dir
+    # )
 
-    results = analyze_first_degree_coefficients(
-        coefficients,
-        segment_motion_ids,
-        save_dir=out_dir
+    #save avarage coefficients among each motion
+
+    DEFAULT_MOTION_MAPPING = "../../data/motion_mapping.json"
+    motion_id_to_name = load_motion_mapping(DEFAULT_MOTION_MAPPING)
+    avg_weights_dict = extract_and_save_avg_weights_for_motions(
+        weights=coefficients_array,
+        motion_ids=segment_motion_ids,
+        save_dir=os.path.join(out_dir, "coefficients_analysis"),
+        motion_names_dict=motion_id_to_name
     )
+    ## reconstruct motion
+    # motion_to_reconstruct = 5  # e.g., 'walking'
+    # desired_lengths = [238]  # Different segment lengths
+    # avg_coefficients= avg_weights_dict[motion_to_reconstruct]['mean']
+    # t = np.linspace(0, 1, desired_lengths[0])
+    # basis = generate_legendre_basis(max_degree, t)  # (time_steps, max_degree+1)
+    # reconstructed = avg_coefficients @ basis.T
+    # print(reconstructed[0].shape)
+    # print(reconstructed[1].shape)
+    # output = os.path.join(out_dir, f"reconstructed_segment_motion_{motion_to_reconstruct}.npy")
+    # np.save(output, reconstructed)
+    #
+    # weights_barplot_across_channels(coefficients_array, segment_motion_ids, motion_id_to_name,
+    #                                 save_dir=out_dir)
 
     X, y = prepare_coefficient_data(coefficients, segment_motion_ids)
     print(f"Feature matrix shape: {X.shape}")
@@ -736,6 +764,24 @@ def main():
         segment_motion_ids,
         out_dir
     )
+
+    # results_legendre = run_lda_analysis(
+    #     X=X, y=y,
+    #     out_dir=out_dir,
+    #     method_name='Legendre Coefficients',
+    #     feature_structure={'n_signals': 48, 'n_features_per_signal': 2},
+    #     # feature_structure is optional — used for heatmap layout
+    # )
+
+
+    # results = run_posture_removal_experiment(
+    #     processed_segments=processed_segments,
+    #     segment_motion_ids=segment_motion_ids,
+    #     out_dir=os.path.join(out_dir, "posture_experiment"),
+    #     tmp_weights=None,  # or None
+    #     ae_latents=None,  # or your AE features
+    #     max_degrees=list(range(1, 10)),
+    # )
 
 if __name__ == "__main__":
     main()

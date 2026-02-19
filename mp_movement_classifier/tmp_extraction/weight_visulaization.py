@@ -410,14 +410,6 @@ def extract_and_save_avg_weights_for_motions(weights, motion_ids, save_dir, moti
 
         print(f"Motion {motion_id} ({motion_name}): averaged {mask.sum()} segments")
 
-    # # Save all averaged weights together
-    # np.savez(
-    #     f"{save_dir}/all_avg_weights.npz",
-    #     **{f"motion_{mid}": data['mean'] for mid, data in avg_weights_dict.items()},
-    #     motion_ids=unique_motions,
-    #     motion_names=[avg_weights_dict[mid]['motion_name'] for mid in unique_motions]
-    # )
-
     return avg_weights_dict
 
 
@@ -566,18 +558,18 @@ def main():
     )
 
 # build reconstruction array
-    # motion_to_reconstruct = 7  # e.g., 'walking'
-    # desired_lengths = [200, 60]  # Different segment lengths
-    # reconstructed = reconstruct_segments_with_avg_weights(
-    #     model_path=model_path,
-    #     avg_weights_dict=avg_weights_dict,
-    #     motion_id=motion_to_reconstruct,
-    #     segment_lengths=desired_lengths
-    # )
-    # print(reconstructed[0].shape)
-    # print(reconstructed[1].shape)
-    # output = os.path.join(model_subdir, f"reconstructed_segment_motion_{motion_to_reconstruct}.npy")
-    # np.save(output, reconstructed[0])
+    motion_to_reconstruct = 5  # e.g., 'walking'
+    desired_lengths = [238, 60]  # Different segment lengths
+    reconstructed = reconstruct_segments_with_avg_weights(
+        model_path=model_path,
+        avg_weights_dict=avg_weights_dict,
+        motion_id=motion_to_reconstruct,
+        segment_lengths=desired_lengths
+    )
+    print(reconstructed[0].shape)
+    print(reconstructed[1].shape)
+    output = os.path.join(model_subdir, f"tmp_reconstructed_segment_motion_{motion_to_reconstruct}.npy")
+    np.save(output, reconstructed[0])
     # for i, seg in enumerate(reconstructed):
     #     plt.figure(figsize=(12, 6))
     #     for joint_idx in range(min(5, seg.shape[0])):

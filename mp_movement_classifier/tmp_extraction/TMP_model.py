@@ -16,7 +16,6 @@ import scipy.signal
 import numpy
 from mp_movement_classifier.tmp_extraction.torch_hessian import *
 
-# from movement_primitives.movement_classifier.src.torch_hessian import *
 from collections import OrderedDict
 
 # from plotting import *

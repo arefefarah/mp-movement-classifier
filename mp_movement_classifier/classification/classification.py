@@ -42,6 +42,7 @@ from mp_movement_classifier.utils.plotting import (
     plot_reconstructions,
     set_figures_directory
 )
+from mp_movement_classifier.benchmark_analysis.lda_analysis import run_lda_analysis
 
 # Globals (populated in main)
 data_dir: Optional[Path] = None
@@ -556,7 +557,7 @@ def calculate_rdm(
                 correlation_matrix[i, j] = corr
 
     # Convert to dissimilarity: RDM = 1 - r
-    rdm = 1 - correlation_matrix
+    rdm = 1 - np.abs(correlation_matrix)
 
     # Print statistics
     print(f"\nRDM Statistics:")
@@ -714,14 +715,14 @@ def main():
     cutoff_freq = 3.0
     tpoints = 30
     model_name = f"mp_model_{num_MPs}_cutoff_{cutoff_freq}"
-    # model_dir = os.path.join(config.SAVING_DIR, f"position_mp_model_{num_MPs}_tpoints_{tpoints}_phase2")
-    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_pymotion_position_mp_model_{num_MPs}_phase_two")
+    model_dir = os.path.join(config.SAVING_DIR, f"new_seg_exponential_mp_model_{num_MPs}_tpoints_{tpoints}_phase_two")
+    # model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_pymotion_position_mp_model_{num_MPs}_phase_two")
     model_file = os.path.join(model_dir, f"mp_model_{num_MPs}_PC_tpoints_{tpoints}")
 
     out_dir = os.path.join(model_dir, "classification")
     model_path = model_file
 
-    folder_path = "../../data/pymotion_position_csv_files"
+    folder_path = "../../data/pymotion_exponential_csv_files"
 
     motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=folder_path,
                                                                              data_type="position", filtering= False)
@@ -773,6 +774,15 @@ def main():
         X=X,
         y=y,
         out_dir=Path(out_dir),)
+
+
+    results_tmp = run_lda_analysis(
+        X=X, y=y,
+        out_dir=Path(out_dir),
+        method_name='TMP Weights',
+        feature_structure={'n_signals': 48, 'n_features_per_signal': 5},
+        # feature_structure is optional — used for heatmap layout
+    )
 
     # OPTIONAL: Use PCA features for classification
     # Uncomment the following lines if you want to classify using reduced features
