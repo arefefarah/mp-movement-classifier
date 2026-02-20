@@ -31,7 +31,7 @@ from mp_movement_classifier.utils.utils import (
 
 )
 from mp_movement_classifier.benchmark_analysis.lda_analysis import run_lda_analysis
-from posture_removal_experiment import run_posture_removal_experiment
+# from posture_removal_experiment import run_posture_removal_experiment
 
 
 
@@ -722,7 +722,7 @@ def main():
     avg_weights_dict = extract_and_save_avg_weights_for_motions(
         weights=coefficients_array,
         motion_ids=segment_motion_ids,
-        save_dir=os.path.join(out_dir, "coefficients_analysis"),
+        save_dir=os.path.join(out_dir, "averaged_weights"),
         motion_names_dict=motion_id_to_name
     )
     ## reconstruct motion

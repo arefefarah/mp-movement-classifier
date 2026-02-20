@@ -7,19 +7,12 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
-from scipy import signal
-from scipy.signal import butter, filtfilt, welch
-from scipy.signal import find_peaks
-import warnings
-import plotly.graph_objects as go
-import plotly.io as pio
-import io
-from PIL import Image
 import json
 import imageio.v2 as imageio
 from matplotlib.animation import FuncAnimation
 
-from mp_movement_classifier.utils.utils import calculate_angular_velocity_quat
+from mp_movement_classifier.tmp_extraction.weight_visulaization import reconstruct_segments_with_avg_weights
+from mp_movement_classifier.benchmark_analysis.legendre_extraction import generate_legendre_basis
 from mp_movement_classifier.utils import config
 from pymotion.io.bvh import BVH
 from pymotion.ops.skeleton import from_root_positions, fk
@@ -79,79 +72,89 @@ def compute_joint_speed(motion_data, joints, frame_time, wrist_joints=['LeftWris
 
     return joint_speeds
 
-# def visualize_motion_with_segmentation(file_name,csv_file_path, wrist_joints , ankle_joints,save_dir):
-#
-#     motion_df = pd.read_csv(csv_file_path)
-#     frame_rate = 30
-#     frame_time = 1 / frame_rate
-#     segments, boundaries = segment_motion_csv(csv_file_path, data_type= "position",
-#                                               wrist_joints = wrist_joints,
-#                                               ankle_joints = ankle_joints,
-#                                               filtering=False)
-#     print(f"len of segments: {len(segments)}")
-#     boundary_frames = [boundaries[0][0]] + [b[1] for b in boundaries]
-#
-#     # Create time vector
-#     time_vector = np.arange(motion_df.shape[0]) * frame_time
-#
-#     target_joints=["LWrist","LKnee","LElbow","LAnkle","Neck","LShoulder"]
-#
-#     # Create plots
-#     fig, axes = plt.subplots(len(target_joints), 1, figsize=(16, 5 * len(target_joints)))
-#     if len(target_joints) == 1:
-#         axes = [axes]
-#
-#     # Color palette
-#     colors = ['red', 'green', 'blue', 'orange', 'purple', 'brown']
-#
-#     # Iterate through target joints
-#     for i, joint_name in enumerate(target_joints):
-#         columns = [col for col in motion_df.columns if col.startswith(joint_name)]
-#         axis_angle_rep = motion_df[columns]
-#
-#         ax = axes[i]
-#         ax.set_title(f'{joint_name} Joint rep with Motion Segments',
-#                      fontsize=16, fontweight='bold')
-#
-#         # Plot each rotation channel
-#         for idx,column in enumerate(columns):
-#             color = colors[idx % len(colors)]
-#             ax.plot(time_vector,motion_df[column],
-#                     color=color,
-#                     label=f'{column}',
-#                     linewidth=1.5,
-#                     alpha=0.7)
-#
-#         # Plot segment boundaries
-#         for boundary in boundary_frames[1:-1]:  # Exclude first and last
-#             # ax.axvline(x=time_vector[boundary], color='r', linestyle='--', alpha=0.7)
-#             ax.axvline(x=time_vector[int(boundary)], color='r', linestyle='--', alpha=0.7)
-#
-#         # Highlight segments with different colors
-#         segment_colors = plt.cm.viridis(np.linspace(0, 1, len(segments)))
-#         for j, segment in enumerate(segments):
-#             boundary = boundaries[j]
-#             start_time = time_vector[boundary[0]]
-#             end_time = time_vector[boundary[1]]
-#             ax.axvspan(start_time, end_time, color=segment_colors[j], alpha=0.2,
-#                        label=f'Segment {j + 1}')
-#
-#         ax.set_xlabel('Time (seconds)', fontsize=12)
-#         ax.set_ylabel('Angle (degrees)', fontsize=12)
-#         ax.legend(fontsize=10, loc='upper right')
-#         ax.grid(True, alpha=0.3)
-#         ax.set_xlim(0, time_vector[-1])
-#
-#     plt.tight_layout()
-#
-#     figures_dir = os.path.join(save_dir, "motion_segmentation")
-#     os.makedirs(figures_dir, exist_ok=True)
-#     plt.savefig(os.path.join(figures_dir, f"{file_name}.png"),
-#                 dpi=300, bbox_inches='tight')
-#     plt.close()
-#
-#     return segments,boundaries
 
+
+def reconstruct_from_model(method_name , model_dir,joint_names,motion_name,desired_length,
+                           root_translation, offsets, parents):
+    if method_name == "legandre_position" or method_name == "legandre_exponential":
+        model_dir = os.path.join(model_dir, "legandre_analysis")
+        avg_weights_path = os.path.join(model_dir, "averaged_weights")
+    else:
+        avg_weights_path = os.path.join(model_dir, "averaged_weights")
+
+    file_path = f"{avg_weights_path}/avg_weights_{motion_name}.npz"
+    avg_weights_data = np.load(file_path)
+    avg_weights = avg_weights_data['mean_weights']
+    avg_weights_data.close()
+    if method_name == "tmp_position":
+        reconstructed = reconstruct_segments_with_avg_weights(
+            model_path=os.path.join(model_dir, f"mp_model_5_PC_tpoints_30"),
+            avg_weights=avg_weights,
+            segment_length=desired_length
+        )
+        pos = reconstructed.T.reshape(-1, len(joint_names), 3)
+        return reconstructed, pos
+
+    elif method_name == "legandre_position":
+        avg_coefficients = avg_weights
+        t = np.linspace(0, 1, desired_length)
+        max_degree = 1
+        basis = generate_legendre_basis(max_degree, t)  # (time_steps, max_degree+1)
+        reconstructed = avg_coefficients @ basis.T
+        pos = reconstructed.T.reshape(-1, len(joint_names), 3)
+        return reconstructed, pos
+
+    elif method_name == "legandre_exponential":
+        avg_coefficients = avg_weights
+        t = np.linspace(0, 1, desired_length)
+        max_degree = 1
+        basis = generate_legendre_basis(max_degree, t)  # (time_steps, max_degree+1)
+        reconstructed = avg_coefficients @ basis.T
+
+    elif method_name == "tmp_exponential_map":
+        # first xonstrcut in exponential  map
+        reconstructed = reconstruct_segments_with_avg_weights(
+            model_path=os.path.join(model_dir, f"mp_model_5_PC_tpoints_30"),
+            avg_weights=avg_weights,
+            segment_length=desired_length
+        )
+    axis_angles = reconstructed.T.reshape(-1, len(joint_names), 3)
+    T_recon = axis_angles.shape[0]
+    n_joints = axis_angles.shape[1]
+    rotmats = np.zeros((T_recon, n_joints, 3, 3))
+    for t in range(T_recon):
+        for j in range(n_joints):
+            angle = np.linalg.norm(axis_angles[t, j])
+            if angle < 1e-8:
+                rotmats[t, j] = np.eye(3)
+            else:
+                rotmats[t, j] = R.from_rotvec(axis_angles[t, j]).as_matrix()
+
+    root_pos = root_translation
+    offsets = np.array(offsets)  # (n_joints, 3)
+    parents = np.array(parents)
+    positions = np.zeros((T_recon, n_joints, 3))
+
+    for t in range(T_recon):
+        for j in range(n_joints):
+            if parents[j] == -1:
+                # Root joint
+                positions[t, j] = root_pos[t]
+            else:
+                # Child: parent_position + parent_global_rotation @ bone_offset
+                p = parents[j]
+                positions[t, j] = positions[t, p] + rotmats[t, p] @ offsets[j]
+    return reconstructed,positions
+
+def get_pos_info(filename):
+    bvh_reference = f"../../data/bvh_files/{filename}.bvh"
+    bvh = BVH()
+    bvh.load(bvh_reference)  # load euler angle rep from bvh data
+    local_rotations, local_positions, parents, offsets, _, _ = bvh.get_data()
+    global_positions = local_positions[:, 0, :]  # root joint
+    pos_original, rotmats = fk(local_rotations, global_positions, offsets, parents)
+    print(f"original pos shape: {pos_original.shape}") # pos shape: (177, 16, 3) 177 num of frames, 16 joint, 3 coordinate= 48 channels total
+    return global_positions,parents,offsets
 
 def main():
     joint_names = [
@@ -160,97 +163,65 @@ def main():
         'LShoulder', 'LElbow', 'LWrist', 'RShoulder', 'RElbow', 'RWrist'
     ]
     model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_pymotion_position_mp_model_5_phase_two")
-
-    # model_dir = os.path.join(model_dir, "legandre_analysis")
+    # model_dir = os.path.join("./../../results/tmp_configs",
+    #                          f"new_seg_exponential_mp_model_5_tpoints_30_phase_two")
     output_path = os.path.join(model_dir, "reconstruction")
     Path(output_path).mkdir(exist_ok=True)
-    # figures_dir = os.path.join("./../../results/segmentation_analysis")
-    # Path(figures_dir).mkdir(exist_ok=True)
-    # for i in range(9):
-    filename = f"subject_4_motion_05"
-    # csv_file = f"../../data/pymotion_quat_csv_files/{filename}.csv"
-    bvh_reference = f"../../data/bvh_files/{filename}.bvh"
     MAPPING_FILE = "../../data/common_motion_mapping.json"
-    motion_id_str = filename.split('_')[-1]
+
     with open(MAPPING_FILE, 'r') as f:
-            data = json.load(f)
-            motion_mapping = data["mapping"]
+        data = json.load(f)
+        motion_mapping = data["mapping"]
     id_to_motion_name = {id_val: motion_name for motion_name, id_val in motion_mapping.items()}
-    motion_name = id_to_motion_name.get(int(motion_id_str))
-    print(motion_name)
 
-    bvh = BVH()
-    bvh.load(bvh_reference)  # load euler angle rep from bvh data
-    local_rotations, local_positions, parents, offsets, _, _ = bvh.get_data()
-    global_positions = local_positions[:, 0, :]  # root joint
-    pos_original, rotmats = fk(local_rotations, global_positions, offsets, parents)
-    print(f"pos shape: {pos_original.shape}") # pos shape: (177, 16, 3) 177 num of frames, 16 joint, 3 coordinate= 48 channels total
+    motions_to_visualize = [
+        "subject_16_motion_02", "subject_9_motion_05", "subject_59_motion_18", "subject_12_motion_17",
+        "subject_2_motion_11","subject_28_motion_09", "subject_23_motion_08", "subject_21_motion_03",
+        "subject_32_motion_00","subject_70_motion_06","subject_15_motion_01", "subject_60_motion_12",
+        "subject_33_motion_00", "subject_13_motion_07","subject_17_motion_13", "subject_75_motion_10",
+        "subject_19_motion_14"
+    ]
+    for filename in motions_to_visualize:
 
-    ### here we want to replace pos with recontructed values of TMP model
-    pos_file = os.path.join(model_dir, "tmp_reconstructed_segment_motion_5.npy")
+    # filename = f"subject_13_motion_18"
+        global_positions, parents, offsets = get_pos_info(filename)
+        motion_id_str = filename.split('_')[-1]
+        motion_name = id_to_motion_name.get(int(motion_id_str))
 
-    tmp_array = np.load(pos_file) #array shape num_frmes, channels(16*3)
-    pos = tmp_array.T.reshape(-1, len(joint_names), 3)
+        ### here we want to replace pos with recontructed values
+        # "legandre_position" ,"legandre_exponential", "tmp_exponential_map" , "tmp_position"
+        method_name = "tmp_position"
+        reconstructed, pos = reconstruct_from_model(method_name, model_dir, joint_names,motion_name=motion_name,
+                                                    desired_length=50,
+                                                    root_translation = global_positions,parents = parents,offsets = offsets)
 
-    # columns = []
-    # data = []
-    # for joint_idx, joint_name in enumerate(joint_names):
-    #     columns.append(joint_name + "_x")
-    #     columns.append(joint_name + "_y")
-    #     columns.append(joint_name + "_z")
-    #
-    # for frame, pose in enumerate(pos):
-    #     data_frame = []
-    #     for joint_idx, joint_name in enumerate(joint_names):
-    #         data_frame.extend(pose[joint_idx, :])
-    #     data.append(data_frame)
-    #
-    # df = pd.DataFrame(data, columns=columns)
-    # output_dir = os.path.join(output_path,f"{filename}.csv")
-    # df.to_csv(output_dir, index=False)
-    # print(f"file saved to {output_dir}")
+        output = os.path.join(output_path, f"recon_from_{method_name}_segment_motion_{motion_name}.npy")
+        np.save(output, reconstructed)
+        print(f"saved recon to {output}")
+        viewer = Viewer(use_reloader=True, xy_size=5, framerate=30)
+        Viewer.run = run_patched
+        viewer.add_skeleton(pos, parents)
+        viewer.add_floor()
+        print(f"Generating GIF for {filename}... this may take a moment.")
+        frames = []
+        for j in range(viewer.max_frames):
+            fig = viewer._create_figure(frame=j)
+            img_bytes = fig.to_image(format="png", width=800, height=600, scale=2)
+            frames.append(imageio.imread(img_bytes))
+            if j % 10 == 0:
+                print(f"Processed frame {j}/{viewer.max_frames}")
 
-    # segment_save_dir = Path(output_path) / "segments_animation" / motion_name
-    # os.makedirs(segment_save_dir, exist_ok=True)
+        imageio.mimsave(Path(output_path) / f'{filename}_recon_from_{method_name}.gif', frames, fps = 30, loop=0)
+        print("Saved animation")
 
-    # # use previous segmentation for this position csv file
-    # segments, boundaries = visualize_motion_with_segmentation(filename,
-    #                                                           csv_file_path = output_dir,
-    #                                                           wrist_joints=['LWrist', 'RWrist'],
-    #                                                           ankle_joints=['LAnkle', 'RAnkle'],
-    #                                                           save_dir=segment_save_dir)
-
-    # for i, boundary in enumerate(boundaries):
-    viewer = Viewer(use_reloader=True, xy_size=5, framerate=30)
-    Viewer.run = run_patched
-    viewer.add_skeleton(pos, parents)
-    viewer.add_floor()
-    # viewer.run()
-
-    print("Generating GIF... this may take a moment.")
-    frames = []
-    for j in range(viewer.max_frames):
-        fig = viewer._create_figure(frame=j)
-        img_bytes = fig.to_image(format="png", width=800, height=600, scale=2)
-        frames.append(imageio.imread(img_bytes))
-        if j % 10 == 0:
-            print(f"Processed frame {j}/{viewer.max_frames}")
-
-    # imageio.mimsave(f'{filename}.gif', frames, fps=30, loop=0)
-    imageio.mimsave(Path(output_path) / f'{filename}_tmp_recons.gif', frames, fps = 30, loop=0)
-    print("Saved animation")
-    # viewer.run()
-
-## plot trajectories for all positions, axis-angle rep, quaternion rep
-
-    plt.plot(pos[:, 2, 0])
-    plt.plot(pos[:, 2, 1])
-    plt.plot(pos[:, 2, 2])
-    plt.title("Position representation")
-    plt.legend(["x","y","z"])
-    plt.xlabel("Frame")
-    plt.savefig(os.path.join(output_path, "position_trajectory.png"))
-    plt.close()
+        plt.plot(pos[:, 2, 0])
+        plt.plot(pos[:, 2, 1])
+        plt.plot(pos[:, 2, 2])
+        plt.title("RKnee joint trajectory")
+        plt.legend(["x","y","z"])
+        plt.xlabel("Frame")
+        plt.savefig(os.path.join(output_path, f"RKnee_{filename}_{method_name}.png"))
+        plt.close()
 
 
 if __name__ == "__main__":

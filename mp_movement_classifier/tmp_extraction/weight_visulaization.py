@@ -412,7 +412,7 @@ def extract_and_save_avg_weights_for_motions(weights, motion_ids, save_dir, moti
 
     return avg_weights_dict
 
-
+#
 def reconstruct_from_weights(weights, MPs, segment_length, kernel_params, resampling_matrix=None):
     """
     Returns:
@@ -454,18 +454,17 @@ def reconstruct_from_weights(weights, MPs, segment_length, kernel_params, resamp
     return reconstructed
 
 
-def reconstruct_segments_with_avg_weights(model_path, avg_weights_dict, motion_id, segment_lengths):
+def reconstruct_segments_with_avg_weights(model_path, avg_weights, segment_length):
     """
     Reconstruct multiple segments using averaged weights for a specific motion
 
     Args:
         model_path: path to saved model
-        avg_weights_dict: dictionary from extract_and_save_avg_weights_for_motions
-        motion_id: which motion's averaged weights to use
-        segment_lengths: list of segment lengths to generate
+        avg_weights: averaged weights for this motion
+        segment_length: segment length to generate
 
     Returns:
-        reconstructed_segments: list of numpy arrays
+        reconstructed_segment: numpy arrays
     """
     # Load model
     model = torch.load(model_path, map_location='cpu', weights_only=False)
@@ -481,28 +480,20 @@ def reconstruct_segments_with_avg_weights(model_path, avg_weights_dict, motion_i
     }
 
     # Get averaged weights for this motion
-    avg_weights = avg_weights_dict[motion_id]['mean']
+    avg_weights = avg_weights
 
-    # Get resampling matrices if available
-    # resampling_matrices = {int(k): v for k, v in model.get('resampling_matrix', {}).items()}
     resampling_matrices = model['resampling_matrix']
 
-    # Reconstruct segments
-    reconstructed_segments = []
-    for seg_len in segment_lengths:
-        resampling_mat = resampling_matrices.get(seg_len, None)
+    resampling_mat = resampling_matrices.get(segment_length, None)
 
-        reconstructed = reconstruct_from_weights(
-            weights=avg_weights,
-            MPs=MPs,
-            segment_length=seg_len,
-            kernel_params=kernel_params,
-            resampling_matrix=resampling_mat
-        )
-
-        reconstructed_segments.append(reconstructed)
-
-    return reconstructed_segments
+    reconstructed = reconstruct_from_weights(
+        weights=avg_weights,
+        MPs=MPs,
+        segment_length=segment_length,
+        kernel_params=kernel_params,
+        resampling_matrix=resampling_mat
+    )
+    return reconstructed
 
 
 def main():
@@ -523,8 +514,8 @@ def main():
     # Load motion mapping
     motion_id_to_name = load_motion_mapping(DEFAULT_MOTION_MAPPING)
 
-    model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"new_seg_pymotion_position_mp_model_5_phase_two")
-    model_name = "mp_model_5_PC_tpoints_30"
+    model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"new_seg_exponential_mp_model_10_tpoints_30_phase_two")
+    model_name = "mp_model_10_PC_tpoints_30"
 
     model_path = os.path.join(model_subdir,model_name)
 
@@ -534,7 +525,7 @@ def main():
     weights = model_data['weights']
 
     args.bvh_dir = DEFAULT_DATA_DIR
-    folder_path = "../../data/pymotion_position_csv_files"
+    folder_path = "../../data/pymotion_exponential_csv_files"
     motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=folder_path,
                                                                              data_type="position",
                                                                              filtering=False)
@@ -556,27 +547,6 @@ def main():
         save_dir=output_dir,
         motion_names_dict=motion_id_to_name
     )
-
-# build reconstruction array
-    motion_to_reconstruct = 5  # e.g., 'walking'
-    desired_lengths = [238, 60]  # Different segment lengths
-    reconstructed = reconstruct_segments_with_avg_weights(
-        model_path=model_path,
-        avg_weights_dict=avg_weights_dict,
-        motion_id=motion_to_reconstruct,
-        segment_lengths=desired_lengths
-    )
-    print(reconstructed[0].shape)
-    print(reconstructed[1].shape)
-    output = os.path.join(model_subdir, f"tmp_reconstructed_segment_motion_{motion_to_reconstruct}.npy")
-    np.save(output, reconstructed[0])
-    # for i, seg in enumerate(reconstructed):
-    #     plt.figure(figsize=(12, 6))
-    #     for joint_idx in range(min(5, seg.shape[0])):
-    #         plt.plot(seg[joint_idx], label=f'Joint {joint_idx}')
-    #     plt.title(f'Reconstructed segment (length={desired_lengths[i]})')
-    #     plt.legend()
-    #     plt.show()
 
 if __name__ == "__main__":
     main()

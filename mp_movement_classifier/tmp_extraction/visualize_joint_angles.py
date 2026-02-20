@@ -493,7 +493,7 @@ def main():
     motions_to_visualize = [
         "subject_16_motion_02", "subject_9_motion_05","subject_59_motion_18","subject_12_motion_17","subject_2_motion_11",
         "subject_28_motion_09","subject_23_motion_08","subject_21_motion_03", "subject_32_motion_00","subject_70_motion_06",
-        "subject_15_motion_01","subject_60_motion_12","subject_13_motion_07","subject_17_motion_13","subject_75_motion_10",
+        "subject_15_motion_01","subject_60_motion_12","subject_33_motion_00","subject_13_motion_07","subject_17_motion_13","subject_75_motion_10",
         "subject_19_motion_14"
     ]
     Segments_index = "../../results/segments_index.json"
@@ -512,11 +512,12 @@ def main():
     # visualize_segment_boundaries(motions_to_visualize, data, id_to_motion_name, folder_path, figures_dir, frame_time)
 
     # rotate camera view to right so that the front of subject can be seen
-    # create_animation(motion_file_stem="subject_52_motion_00", camera_view='right')
+    # create_animation(motion_file_stem="subject_4_motion_05", camera_view='right')
 
     # plot different represenation of motion trajectory
-    # plot_diff_representations(  "subject_16_motion_02", joint_names)
-    extract_exponential_maps_csv(path, finished_motions, id_to_motion_name, joint_names, save_dir=folder_path)
+    # for motion in motions_to_visualize:
+    plot_diff_representations(  "subject_4_motion_05", joint_names)
+    # extract_exponential_maps_csv(path, finished_motions, id_to_motion_name, joint_names, save_dir=folder_path)
 
 if __name__ == "__main__":
     main()

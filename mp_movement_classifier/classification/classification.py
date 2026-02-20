@@ -711,7 +711,7 @@ def calculate_rdm(
 def main():
     global data_dir, model_path
 
-    num_MPs = 5
+    num_MPs = 10
     cutoff_freq = 3.0
     tpoints = 30
     model_name = f"mp_model_{num_MPs}_cutoff_{cutoff_freq}"

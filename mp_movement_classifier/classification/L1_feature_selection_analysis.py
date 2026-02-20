@@ -586,6 +586,7 @@ def main():
         "./../../results/tmp_configs",
         f"new_seg_pymotion_position_mp_model_{num_MPs}_phase_two"
     )
+    model_dir = os.path.join("./../../results/tmp_configs",f"new_seg_exponential_mp_model_{num_MPs}_tpoints_{tpoints}_phase_two")
     model_file = os.path.join(
         model_dir,
         f"mp_model_{num_MPs}_PC_tpoints_{tpoints}"
@@ -593,7 +594,7 @@ def main():
 
     out_dir = os.path.join(model_dir, "l1_feature_selection")
 
-    folder_path = "../../data/pymotion_position_csv_files"
+    folder_path = "../../data/pymotion_exponential_csv_files"
 
     # ========== Load Data ==========
     print("Loading and processing data...")
