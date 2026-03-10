@@ -351,6 +351,8 @@ def main():
     num_MPs = 5
     model_dir = os.path.join("./../../results/tmp_configs",
                              f"new_seg_pymotion_position_mp_model_{num_MPs}_phase_two")
+    # model_dir = os.path.join("./../../results/tmp_configs",
+    #                          f"mean_subtracted_mp_model_{num_MPs}_tpoints_30_phase_two")
     out_dir = os.path.join(model_dir, "legendre_optimization")
     folder_path = "./../../data/pymotion_position_csv_files"
 
@@ -367,7 +369,7 @@ def main():
     print(f"Number of unique motion types: {len(np.unique(segment_motion_ids))}")
 
     # Define range of max_degree values to test
-    degree_range = range(1, 10)  # Test degrees 3 through 9
+    degree_range = range(0, 10)  # Test degrees 3 through 9
 
     # Run optimization
     results = optimize_max_degree(

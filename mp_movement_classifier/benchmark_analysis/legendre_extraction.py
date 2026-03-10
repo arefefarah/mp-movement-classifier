@@ -691,11 +691,13 @@ def _plot_distance_matrix(results, save_dir):
 def main():
 
     num_MPs = 5
-    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_exponential_mp_model_{num_MPs}_tpoints_30_phase_two")
+    # model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_exponential_mp_model_{num_MPs}_tpoints_30_phase_two")
+    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_pymotion_position_mp_model_{num_MPs}_phase_two")
     out_dir = os.path.join(model_dir, "legandre_analysis")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    folder_path = "./../../data/pymotion_exponential_csv_files"
+    # folder_path = "./../../data/pymotion_exponential_csv_files"
+    folder_path = "./../../data/pymotion_position_csv_files"
     motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=folder_path,
                                                                              data_type = "position",
                                                                              filtering= False)
@@ -719,26 +721,13 @@ def main():
 
     DEFAULT_MOTION_MAPPING = "../../data/motion_mapping.json"
     motion_id_to_name = load_motion_mapping(DEFAULT_MOTION_MAPPING)
-    avg_weights_dict = extract_and_save_avg_weights_for_motions(
-        weights=coefficients_array,
-        motion_ids=segment_motion_ids,
-        save_dir=os.path.join(out_dir, "averaged_weights"),
-        motion_names_dict=motion_id_to_name
-    )
-    ## reconstruct motion
-    # motion_to_reconstruct = 5  # e.g., 'walking'
-    # desired_lengths = [238]  # Different segment lengths
-    # avg_coefficients= avg_weights_dict[motion_to_reconstruct]['mean']
-    # t = np.linspace(0, 1, desired_lengths[0])
-    # basis = generate_legendre_basis(max_degree, t)  # (time_steps, max_degree+1)
-    # reconstructed = avg_coefficients @ basis.T
-    # print(reconstructed[0].shape)
-    # print(reconstructed[1].shape)
-    # output = os.path.join(out_dir, f"reconstructed_segment_motion_{motion_to_reconstruct}.npy")
-    # np.save(output, reconstructed)
-    #
-    # weights_barplot_across_channels(coefficients_array, segment_motion_ids, motion_id_to_name,
-    #                                 save_dir=out_dir)
+    # avg_weights_dict = extract_and_save_avg_weights_for_motions(
+    #     weights=coefficients_array,
+    #     motion_ids=segment_motion_ids,
+    #     save_dir=os.path.join(out_dir, "averaged_weights"),
+    #     motion_names_dict=motion_id_to_name
+    # )
+
 
     X, y = prepare_coefficient_data(coefficients, segment_motion_ids)
     print(f"Feature matrix shape: {X.shape}")

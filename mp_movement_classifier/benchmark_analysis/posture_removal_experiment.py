@@ -185,7 +185,7 @@ def analyze_degree0_content(processed_segments, segment_motion_ids, out_dir):
 
 def run_degree_sweep(processed_segments, segment_motion_ids, max_degrees=None, label='Raw'):
     if max_degrees is None:
-        max_degrees = list(range(1, 10))
+        max_degrees = list(range(0, 10))
 
     results = []
     for deg in max_degrees:
@@ -235,7 +235,7 @@ def run_posture_removal_experiment(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if max_degrees is None:
-        max_degrees = list(range(1, 10))
+        max_degrees = list(range(0, 10))
 
     if num_signals is None:
         num_signals = processed_segments[0].shape[0]

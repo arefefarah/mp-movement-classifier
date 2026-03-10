@@ -57,8 +57,8 @@ from mp_movement_classifier.utils.plotting import (
 
 num_MPs = 5
 tpoints = 30
-# model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_pymotion_position_mp_model_{num_MPs}_phase_two")
-model_dir = os.path.join("./../../results/tmp_configs", f"mean_subtracted_mp_model_{num_MPs}_tpoints_{tpoints}_phase_two")
+model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_pymotion_position_mp_model_{num_MPs}_phase_two")
+# model_dir = os.path.join("./../../results/tmp_configs", f"mean_subtracted_mp_model_{num_MPs}_tpoints_{tpoints}_phase_two")
 model_path = os.path.join(model_dir, f"mp_model_{num_MPs}_PC_tpoints_{tpoints}")
 out_dir = os.path.join(model_dir, "legandre_analysis")
 out_dir = Path(out_dir)
@@ -99,5 +99,5 @@ results = run_posture_removal_experiment(
         out_dir=os.path.join(out_dir, "posture_experiment"),
         tmp_weights=X_tmp,  # or None
         ae_latents=None,  # or your AE features
-        max_degrees=list(range(1, 10)),
+        max_degrees=list(range(0, 10)),
     )

@@ -586,7 +586,7 @@ def calculate_rdm(
     # --- Plot 1: RDM Heatmap ---
     fig, ax = plt.subplots(figsize=(12, 10))
 
-    im = ax.imshow(rdm, cmap='viridis', aspect='auto', vmin=0, vmax=2)
+    im = ax.imshow(rdm, cmap='viridis', aspect='auto', vmin=0, vmax=1)
 
     # Add colorbar
     cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
@@ -711,18 +711,18 @@ def calculate_rdm(
 def main():
     global data_dir, model_path
 
-    num_MPs = 10
+    num_MPs = 5
     cutoff_freq = 3.0
     tpoints = 30
     model_name = f"mp_model_{num_MPs}_cutoff_{cutoff_freq}"
-    model_dir = os.path.join(config.SAVING_DIR, f"new_seg_exponential_mp_model_{num_MPs}_tpoints_{tpoints}_phase_two")
-    # model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_pymotion_position_mp_model_{num_MPs}_phase_two")
+    # model_dir = os.path.join(config.SAVING_DIR, f"new_seg_exponential_mp_model_{num_MPs}_tpoints_{tpoints}_phase_two")
+    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_pymotion_position_mp_model_{num_MPs}_phase_two")
     model_file = os.path.join(model_dir, f"mp_model_{num_MPs}_PC_tpoints_{tpoints}")
 
     out_dir = os.path.join(model_dir, "classification")
     model_path = model_file
 
-    folder_path = "../../data/pymotion_exponential_csv_files"
+    folder_path = "../../data/pymotion_position_csv_files"
 
     motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=folder_path,
                                                                              data_type="position", filtering= False)
