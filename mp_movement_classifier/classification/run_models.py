@@ -7,6 +7,9 @@ from typing import List, Tuple
 
 import numpy as np
 import torch
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 from mp_movement_classifier.utils.utils import (
     process_motion_data,
@@ -39,8 +42,53 @@ def _ensure_dir(p: Path) -> None:
     p.mkdir(parents=True, exist_ok=True)
 
 
+def _plot_combined_pca_variance(explained_by_model: dict, out_dir: Path, upto: int = 80) -> Path:
+    """
+    Plot cumulative explained variance curves for multiple models on one figure.
+    explained_by_model: dict mapping model name -> 1D np.ndarray of explained_variance_ratio_.
+    """
+    if not explained_by_model:
+        raise ValueError("No PCA explained variance data provided for combined plot")
+
+    # Determine the maximum number of components to consider across all models
+    max_len = min(upto, max(len(v) for v in explained_by_model.values()))
+    if max_len <= 0:
+        raise ValueError("Explained variance arrays are empty")
+
+    plt.figure(figsize=(10, 7))
+
+    colors = {
+        'TMP': '#1f77b4',
+        'AE': '#ff7f0e',
+        'Legendre': '#2ca02c',
+    }
+
+    # Plot each model with its own x-range to avoid dimension mismatch
+    for name, ratios in explained_by_model.items():
+        if ratios is None or len(ratios) == 0:
+            continue
+        upto_i = min(max_len, len(ratios))
+        x_i = np.arange(1, upto_i + 1)
+        cumsum_i = np.cumsum(ratios[:upto_i])
+        plt.plot(x_i, cumsum_i, label=name, linewidth=2, marker='o', markersize=4, color=colors.get(name))
+
+    plt.axhline(y=0.90, color='r', linestyle='--', linewidth=1.5, label='90%')
+    plt.axhline(y=0.95, color='g', linestyle='--', linewidth=1.5, label='95%')
+    plt.xlabel('Number of Components')
+    plt.ylabel('Cumulative Explained Variance')
+    plt.title('Cumulative PCA Explained Variance (Combined)')
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    _ensure_dir(out_dir)
+    out_path = out_dir / 'pca_cumulative_variance_combined.png'
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=200)
+    plt.close()
+    return out_path
+
+
 def _run_tmp(data_dir: str, tmp_model_dir: str, seed: int,
-             primary_classifier: str, also_run_rf: bool) -> None:
+             primary_classifier: str, also_run_rf: bool):
     print("[TMP] Loading data and model...")
     motion_ids, processed_segments, segment_motion_ids = process_motion_data(
         folder_path=data_dir, data_type='position', filtering=False
@@ -72,7 +120,7 @@ def _run_tmp(data_dir: str, tmp_model_dir: str, seed: int,
     _ensure_dir(out_dir)
 
     print("[TMP] Running unified classification pipeline...")
-    run_classification_pipeline(
+    res = run_classification_pipeline(
         X=X, y=y, out_dir=out_dir,
         feature_names=feature_names,
         feature_structure={'n_signals': num_signals, 'n_features_per_signal': model.num_MPs},
@@ -81,6 +129,11 @@ def _run_tmp(data_dir: str, tmp_model_dir: str, seed: int,
         seed=seed,
     )
     print(f"[TMP] Done. Artifacts: {out_dir}")
+    # Return PCA explained variance ratio for combined plotting
+    try:
+        return res.get('pca', {}).get('explained_variance_ratio', None)
+    except Exception:
+        return None
 
 
 def _ae_default_out_dir(ae_model_path: str) -> Path:
@@ -90,7 +143,7 @@ def _ae_default_out_dir(ae_model_path: str) -> Path:
 
 
 def _run_ae(data_dir: str, ae_model_path: str, ae_out_dir: str | None, seed: int,
-            primary_classifier: str, also_run_rf: bool, cache_dir: str) -> None:
+            primary_classifier: str, also_run_rf: bool, cache_dir: str):
     print("[AE] Loading data...")
     motion_ids, processed_segments, segment_motion_ids = process_motion_data(
         folder_path=data_dir, data_type='position', filtering=False
@@ -165,7 +218,7 @@ def _run_ae(data_dir: str, ae_model_path: str, ae_out_dir: str | None, seed: int
     _ensure_dir(cls_out_dir)
 
     print("[AE] Running unified classification pipeline...")
-    run_classification_pipeline(
+    res = run_classification_pipeline(
         X=X_latent, y=y_latent, out_dir=cls_out_dir,
         feature_names=feature_names,
         feature_structure={'n_features': X_latent.shape[1]},
@@ -174,10 +227,14 @@ def _run_ae(data_dir: str, ae_model_path: str, ae_out_dir: str | None, seed: int
         seed=seed,
     )
     print(f"[AE] Done. Artifacts: {cls_out_dir}")
+    try:
+        return res.get('pca', {}).get('explained_variance_ratio', None)
+    except Exception:
+        return None
 
 
 def _run_legendre(data_dir: str, legendre_out_dir: str | None, seed: int,
-                  primary_classifier: str, also_run_rf: bool) -> None:
+                  primary_classifier: str, also_run_rf: bool):
     print("[Legendre] Loading data and computing coefficients...")
     motion_ids, processed_segments, segment_motion_ids = process_motion_data(
         folder_path=data_dir, data_type='position', filtering=False
@@ -200,7 +257,7 @@ def _run_legendre(data_dir: str, legendre_out_dir: str | None, seed: int,
     _ensure_dir(cls_out_dir)
 
     print("[Legendre] Running unified classification pipeline...")
-    run_classification_pipeline(
+    res = run_classification_pipeline(
         X=X, y=y, out_dir=cls_out_dir,
         feature_names=feature_names,
         feature_structure={'n_signals': n_signals, 'n_features_per_signal': max_degree + 1},
@@ -209,6 +266,10 @@ def _run_legendre(data_dir: str, legendre_out_dir: str | None, seed: int,
         seed=seed,
     )
     print(f"[Legendre] Done. Artifacts: {cls_out_dir}")
+    try:
+        return res.get('pca', {}).get('explained_variance_ratio', None)
+    except Exception:
+        return None
 
 
 def parse_args() -> argparse.Namespace:
@@ -236,6 +297,11 @@ def parse_args() -> argparse.Namespace:
     # Cache location
     parser.add_argument('--cache-dir', type=str, default=DEFAULT_CACHE_DIR, help='Directory to store AE latents cache (defaults to project data/).')
 
+    # Combined plot output directory (optional)
+    parser.add_argument('--combined-out-dir', type=str, default=None,
+                        help='Directory to save the combined PCA variance plot. '
+                             'Defaults to --tmp-model-dir if provided; otherwise results/tmp_configs/new_seg_pymotion_position_mp_model')
+
     return parser.parse_args()
 
 
@@ -244,21 +310,25 @@ def main() -> None:
 
     also_run_rf = bool(args.rf)
 
+    explained_by_model = {}
+
     if 'tmp' in args.models:
         if not args.tmp_model_dir:
             raise ValueError("--tmp-model-dir is required when including 'tmp' in --models")
-        _run_tmp(
+        tmp_ev = _run_tmp(
             data_dir=args.data_dir,
             tmp_model_dir=args.tmp_model_dir,
             seed=args.seed,
             primary_classifier=args.primary_classifier,
             also_run_rf=also_run_rf,
         )
+        if tmp_ev is not None:
+            explained_by_model['TMP'] = tmp_ev
 
     if 'ae' in args.models:
         if not args.ae_model_path:
             raise ValueError("--ae-model-path is required when including 'ae' in --models")
-        _run_ae(
+        ae_ev = _run_ae(
             data_dir=args.data_dir,
             ae_model_path=args.ae_model_path,
             ae_out_dir=args.ae_out_dir,
@@ -267,15 +337,33 @@ def main() -> None:
             also_run_rf=also_run_rf,
             cache_dir=args.cache_dir,
         )
+        if ae_ev is not None:
+            explained_by_model['AE'] = ae_ev
 
     if 'legendre' in args.models:
-        _run_legendre(
+        leg_ev = _run_legendre(
             data_dir=args.data_dir,
             legendre_out_dir=args.legendre_out_dir,
             seed=args.seed,
             primary_classifier=args.primary_classifier,
             also_run_rf=also_run_rf,
         )
+        if leg_ev is not None:
+            explained_by_model['Legendre'] = leg_ev
+
+    # Determine combined output directory
+    if args.combined_out_dir:
+        combined_dir = Path(args.combined_out_dir)
+    elif args.tmp_model_dir:
+        combined_dir = Path(args.tmp_model_dir)
+    else:
+        combined_dir = Path(__file__).resolve().parents[2] / 'results' / 'tmp_configs' / 'new_seg_pymotion_position_mp_model'
+
+    if explained_by_model:
+        out_path = _plot_combined_pca_variance(explained_by_model, combined_dir)
+        print(f"[Combined] PCA cumulative variance plot saved to: {out_path}")
+    else:
+        print("[Combined] Skipped: no PCA outputs available from selected models.")
 
 
 if __name__ == '__main__':
