@@ -17,7 +17,7 @@ filename = "subject_11_motion_14.csv"
 csv_file_path = Path(data_dir) / filename
 
 motion_df = pd.read_csv(csv_file_path)
-Segments_index= "../../results/segments_index.json"
+Segments_index= './data/segments_index.json'
 with open(Segments_index, 'r') as f:
     data = json.load(f)
     boundaries = data[csv_file_path.stem]

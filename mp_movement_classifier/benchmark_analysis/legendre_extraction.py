@@ -734,6 +734,32 @@ def main():
     print(f"Label array shape: {y.shape}")
     print(f" {len(np.unique(y))} unique motion types")
 
+    # Unified classification pipeline for Legendre features
+    from mp_movement_classifier.classification.pipeline import run_classification_pipeline
+    # Build feature names: deg_k_signal_j
+    max_degree_local = max_degree
+    # Determine n_signals from coefficients shape: first sample has shape (n_signals, max_degree+1)
+    n_signals = coefficients[0].shape[0]
+    feature_names = []
+    for j in range(n_signals):
+        for k in range(max_degree_local + 1):
+            feature_names.append(f"deg_{k}_signal_{j}")
+
+    cls_out_dir = os.path.join(out_dir, 'classification')
+    run_classification_pipeline(
+        X=X,
+        y=y,
+        out_dir=cls_out_dir,
+        feature_names=feature_names,
+        feature_structure={'n_signals': n_signals, 'n_features_per_signal': max_degree_local + 1},
+        primary_classifier='linear_svc',
+        also_run_random_forest=False,
+        fixed_cm_vmin=0.0,
+        fixed_cm_vmax=1.0,
+        seed=42,
+    )
+
+    # Keep existing visual analyses
     pca = visualize_with_pca(X, y, out_dir)
     print(f"Total variance explained by 2 PCs: {sum(pca.explained_variance_ratio_[:2]):.4f}")
 
@@ -743,10 +769,6 @@ def main():
         X=X,
         y=y,
         out_dir=out_dir )
-
-    # Classify motion types
-    print(f"feature space shape: {X.shape}")
-    classifier, accuracy = classify_motion_types(X, y, out_dir)
 
     figures = plot_coefficient_distributions(
         coefficients,

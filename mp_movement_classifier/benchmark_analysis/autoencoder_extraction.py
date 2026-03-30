@@ -407,7 +407,9 @@ def extract_representations(model, dataloader, device='cuda'):
 
     with torch.no_grad():
         for batch in dataloader:
-            data = batch['data'].to(device)
+            # Ensure input dtype matches model parameter dtype to avoid Float/Double mismatch
+            model_dtype = next(model.parameters()).dtype
+            data = batch['data'].to(device=device, dtype=model_dtype)
             mask = batch['mask'].to(device)
 
             latent = model.encode(data, mask)
@@ -707,45 +709,28 @@ def main():
     fig.savefig(RESULTS_DIR / 'variance_analysis.png', dpi=300, bbox_inches='tight')
     plt.close()
 
-    # Step 7: Classification
-    print("\n[7/7] Training classifiers on learned representations...")
-    results = train_classifiers(train_repr, train_labels, test_repr, test_labels)
-    rdm_results = calculate_rdm(
-        X=train_repr,
-        y=train_labels,
-        out_dir=RESULTS_DIR)
-    svm_report = results['SVM']['report_str']
-    path = os.path.join(RESULTS_DIR, "classification_report_svm.txt")
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(svm_report)
+    # Step 7: Classification using unified pipeline on latent vectors
+    print("\n[7/7] Classification with unified pipeline...")
+    from mp_movement_classifier.classification.pipeline import run_classification_pipeline
 
+    # Combine train/test for a single split within the pipeline
+    X_latent = np.vstack([train_repr, test_repr])
+    y_latent = np.concatenate([train_labels, test_labels])
+    feature_names = [f'latent_{i}' for i in range(train_repr.shape[1])]
 
-    # Plot confusion matrices
-    fig, axes = plt.subplots(2, 2, figsize=(15, 15))
-    axes = axes.ravel()
-
-    for idx, (name, result) in enumerate(results.items()):
-        sns.heatmap(result['confusion_matrix'], annot=True, fmt='d',
-                    cmap='Blues', ax=axes[idx])
-        axes[idx].set_title(f'{name}\nAccuracy: {result["report"]["accuracy"]:.4f}')
-        axes[idx].set_xlabel('Predicted')
-        axes[idx].set_ylabel('True')
-
-    plt.tight_layout()
-    fig.savefig(RESULTS_DIR / 'confusion_matrices.png', dpi=300, bbox_inches='tight')
-    plt.close()
-
-    # Save results summary
-    with open(RESULTS_DIR / 'classification_results.txt', 'w') as f:
-        f.write("CLASSIFICATION RESULTS\n")
-        f.write("=" * 80 + "\n\n")
-        for name, result in results.items():
-            f.write(f"\n{name}:\n")
-            f.write(f"  CV Accuracy: {result['cv_mean']:.4f} (+/- {result['cv_std']:.4f})\n")
-            f.write(f"  Test Accuracy: {result['report']['accuracy']:.4f}\n")
-            f.write(f"  Macro F1: {result['report']['macro avg']['f1-score']:.4f}\n")
-            f.write(f"  Weighted F1: {result['report']['weighted avg']['f1-score']:.4f}\n")
+    cls_out_dir = RESULTS_DIR / 'classification'
+    run_classification_pipeline(
+        X=X_latent,
+        y=y_latent,
+        out_dir=cls_out_dir,
+        feature_names=feature_names,
+        feature_structure={'n_features': train_repr.shape[1]},
+        primary_classifier='linear_svc',
+        also_run_random_forest=False,
+        fixed_cm_vmin=0.0,
+        fixed_cm_vmax=1.0,
+        seed=42,
+    )
 
     print("\n" + "=" * 80)
     print("TRAINING COMPLETE!")

@@ -23,6 +23,8 @@ from mp_movement_classifier.utils.plotting import (
     set_figures_directory
 )
 from mp_movement_classifier.utils import config
+from mp_movement_classifier.classification.classification import prepare_weights_for_classification
+from mp_movement_classifier.classification.pipeline import run_classification_pipeline
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train and evaluate MP model on BVH data.")
@@ -456,6 +458,28 @@ def main() -> None:
         model_dir=model_dir,
         tail_window=tail_window,
     )
+
+    # Unified classification pipeline (TMP features)
+    try:
+        X_tmp = prepare_weights_for_classification(model, num_segments=num_segments, num_signals=num_signals, num_MPs=args.num_mps)
+        y_tmp = np.array(segment_motion_ids)
+        feature_names = [f"signal_{s}_mp_{m}" for s in range(num_signals) for m in range(args.num_mps)]
+        cls_out_dir = os.path.join(model_dir, 'classification')
+        run_classification_pipeline(
+            X=X_tmp,
+            y=y_tmp,
+            out_dir=cls_out_dir,
+            feature_names=feature_names,
+            feature_structure={'n_signals': num_signals, 'n_features_per_signal': args.num_mps},
+            primary_classifier='linear_svc',
+            also_run_random_forest=True,
+            fixed_cm_vmin=0.0,
+            fixed_cm_vmax=1.0,
+            seed=42,
+        )
+        print(f"  Classification artifacts saved to: {cls_out_dir}")
+    except Exception as e:
+        print(f"[warning] Unified classification pipeline failed: {e}")
 
     print(f"\n✓ Experiment completed successfully!")
     print(f"  Model saved to: {model_path}")

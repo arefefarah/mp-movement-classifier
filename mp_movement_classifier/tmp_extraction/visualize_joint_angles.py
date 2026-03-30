@@ -496,7 +496,7 @@ def main():
         "subject_15_motion_01","subject_60_motion_12","subject_33_motion_00","subject_13_motion_07","subject_17_motion_13","subject_75_motion_10",
         "subject_19_motion_14"
     ]
-    Segments_index = "../../results/segments_index.json"
+    Segments_index = './data/segments_index.json'
     with open(Segments_index, 'r') as f:
         data = json.load(f)
 

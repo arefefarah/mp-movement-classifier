@@ -9,6 +9,7 @@ import numpy as np
 import re
 from bvh import Bvh
 from scipy.signal import butter, filtfilt, find_peaks
+from pathlib import Path
 
 from mp_movement_classifier.tmp_extraction.TMP_model import MP_model
 from mp_movement_classifier.utils import config
@@ -327,7 +328,7 @@ def process_motion_data(folder_path,data_type,filtering ):
     csv_files = [f for f in os.listdir(folder_path) if f.lower().endswith('.csv')]
     pattern = re.compile(r'motion_(\d+)')
 
-    Segments_index = "../../results/segments_index.json"
+    Segments_index = './data/segments_index.json'
     with open(Segments_index, 'r') as f:
         data = json.load(f)
 

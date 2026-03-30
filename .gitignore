@@ -75,6 +75,7 @@ ipython_config.py
 data/
 !data/.gitkeep
 
+/PyMO
 
 # Results directories (exclude all results)
 results/
