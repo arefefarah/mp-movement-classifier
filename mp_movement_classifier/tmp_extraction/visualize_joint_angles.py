@@ -165,6 +165,7 @@ def visualize_segment_boundaries(motions_to_visualize, data, id_to_motion_name, 
 
         target_joints=["LWrist","LKnee","LElbow","LAnkle","Neck","LShoulder"]
 
+
         # Create plots
         fig, axes = plt.subplots(len(target_joints), 1, figsize=(16, 5 * len(target_joints)))
         if len(target_joints) == 1:
@@ -212,8 +213,73 @@ def visualize_segment_boundaries(motions_to_visualize, data, id_to_motion_name, 
         os.makedirs(seg_dir, exist_ok=True)
         plt.savefig(os.path.join(seg_dir, f"{motion}.png"),
                     dpi=300, bbox_inches='tight')
+        print(f"Saved: {motion}.png")
         plt.close()
 
+def plot_single_joint_boundaries(data, id_to_motion_name, frame_time, folder_path, figures_dir, motion, joint_name):
+    boundaries = data[motion]
+    filename = motion + ".csv"
+    motion_id_str = motion.split('_')[-1]
+    motion_name = id_to_motion_name.get(int(motion_id_str))
+    csv_path = os.path.join(Path(folder_path), filename)
+    motion_df = pd.read_csv(csv_path)
+    time_vector = np.arange(motion_df.shape[0]) * frame_time
+    columns = [col for col in motion_df.columns if col.startswith(joint_name)]
+
+    # ── Design big so when scaled down in Affinity fonts stay readable ────────
+    fig, ax = plt.subplots(figsize=(20, 6))
+
+    ax.set_title(f'{motion_name} – {joint_name} Joint with Motion Segments',
+                 fontsize=24, fontweight='bold')
+
+    channel_colors = ['red', 'green', 'blue', 'orange', 'purple', 'brown']
+    for idx, column in enumerate(columns):
+        ax.plot(time_vector, motion_df[column],
+                color=channel_colors[idx % len(channel_colors)],
+                label=column,
+                linewidth=2,
+                alpha=0.7)
+
+    # ── X-axis cap at 10 seconds ──────────────────────────────────────────────
+    x_max = min(time_vector[-1], 10.0)
+
+    segment_colors = plt.cm.viridis(np.linspace(0, 1, len(boundaries)))
+    for j, boundary in enumerate(boundaries):
+        start_time = time_vector[boundary[0]]
+        end_time   = time_vector[boundary[1]]
+
+        # skip segments entirely outside the 10s window
+        if start_time > x_max:
+            continue
+
+        end_time = min(end_time, x_max)  # clip segment end to 10s
+
+        ax.axvline(x=start_time, color='r', linestyle='--', alpha=0.7)
+        ax.axvline(x=end_time,   color='r', linestyle='--', alpha=0.7)
+        ax.axvspan(start_time, end_time,
+                   color=segment_colors[j], alpha=0.2,
+                   label=f'Segment {j + 1}')
+
+    ax.set_xlabel('Time (seconds)', fontsize=22)
+    ax.set_ylabel('Angle (degrees)', fontsize=22)
+    ax.tick_params(axis='both', labelsize=20)
+    ax.grid(True, alpha=0.3)
+    ax.set_xlim(0, x_max)   # enforces the 10s cap on the plot
+
+    ax.legend(fontsize=18,
+              loc='upper left',
+              bbox_to_anchor=(0, -0.15),   # below the plot instead of beside it
+              borderaxespad=0,
+              ncol=len(columns) + len(boundaries))
+
+    plt.tight_layout()
+
+    seg_dir = os.path.join(figures_dir, "segmentation_boundaries")
+    os.makedirs(seg_dir, exist_ok=True)
+    out_path = os.path.join(seg_dir, f"{motion}_{joint_name}.svg")
+    plt.savefig(out_path, format='svg', dpi=150, bbox_inches='tight')
+    print(f"Saved: {out_path}")
+    plt.close()
 
 def set_camera_view(fig, view='right'):
     # Define camera positions
@@ -489,34 +555,40 @@ def main():
         motion_mapping = data["mapping"]
     id_to_motion_name = {id_val: motion_name for motion_name, id_val in motion_mapping.items()}
 
-
-    motions_to_visualize = [
-        "subject_16_motion_02", "subject_9_motion_05","subject_59_motion_18","subject_12_motion_17","subject_2_motion_11",
-        "subject_28_motion_09","subject_23_motion_08","subject_21_motion_03", "subject_32_motion_00","subject_70_motion_06",
-        "subject_15_motion_01","subject_60_motion_12","subject_33_motion_00","subject_13_motion_07","subject_17_motion_13","subject_75_motion_10",
-        "subject_19_motion_14"
-    ]
-    Segments_index = './data/segments_index.json'
+    motions_to_visualize = [ "subject_16_motion_02" ,"subject_16_motion_05" ]
+    # motions_to_visualize = [
+    #     "subject_16_motion_02", "subject_9_motion_05","subject_59_motion_18","subject_12_motion_17","subject_2_motion_11",
+    #     "subject_28_motion_09","subject_23_motion_08","subject_21_motion_03", "subject_32_motion_00","subject_70_motion_06",
+    #     "subject_15_motion_01","subject_60_motion_12","subject_33_motion_00","subject_13_motion_07","subject_17_motion_13","subject_75_motion_10",
+    #     "subject_19_motion_14"
+    # ]
+    Segments_index = "../../data/segments_index.json"
     with open(Segments_index, 'r') as f:
         data = json.load(f)
 
-    folder_path = "../../data/pymotion_exponential_csv_files"
+    folder_path = "../../data/pymotion_position_csv_files"
     frame_time = 1/30
 
     # finished_motions = []
-    with open('files.txt', 'r') as f:
-        finished_motions = [line.strip() for line in f if line.strip()]
-        print(finished_motions)
+    # with open('files.txt', 'r') as f:
+    #     finished_motions = [line.strip() for line in f if line.strip()]
+    #     print(finished_motions)
     # extract_all_motions_csv_generate_animation(path, finished_motions, id_to_motion_name, joint_names, figures_dir)
 
     # visualize_segment_boundaries(motions_to_visualize, data, id_to_motion_name, folder_path, figures_dir, frame_time)
+
+    plot_single_joint_boundaries(
+        data,id_to_motion_name, frame_time, folder_path, figures_dir,
+        motion=motions_to_visualize[0],
+        joint_name="LAnkle",
+    )
+
 
     # rotate camera view to right so that the front of subject can be seen
     # create_animation(motion_file_stem="subject_4_motion_05", camera_view='right')
 
     # plot different represenation of motion trajectory
-    # for motion in motions_to_visualize:
-    plot_diff_representations(  "subject_4_motion_05", joint_names)
+    # plot_diff_representations(  "subject_4_motion_05", joint_names)
     # extract_exponential_maps_csv(path, finished_motions, id_to_motion_name, joint_names, save_dir=folder_path)
 
 if __name__ == "__main__":

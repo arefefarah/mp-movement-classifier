@@ -691,8 +691,8 @@ def _plot_distance_matrix(results, save_dir):
 def main():
 
     num_MPs = 5
-    # model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_exponential_mp_model_{num_MPs}_tpoints_30_phase_two")
-    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_pymotion_position_mp_model_{num_MPs}_phase_two")
+
+    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_mp_model_{num_MPs}_phase_three")
     out_dir = os.path.join(model_dir, "legandre_analysis")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

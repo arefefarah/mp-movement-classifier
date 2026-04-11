@@ -67,7 +67,7 @@ class MP_model(torch.nn.Module):
             # self.init_model_params(init_data)
 
             # PCA on subset of data
-            self.init_model_params_subset(init_data, subset_size=300)
+            self.init_model_params_subset(init_data, subset_size=700)
             print("Initial kernel variance", self.kernel_var)
             print("Initial kernel width",self.kernel_width)
         else:

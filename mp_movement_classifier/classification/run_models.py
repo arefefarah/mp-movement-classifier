@@ -11,6 +11,21 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+# Publication-style defaults: fonts and sizes
+matplotlib.rcParams.update({
+    'font.family': 'Arial',  # fallback handled by matplotlib if not available
+    'font.size': 10,
+    'axes.titlesize': 12,
+    'axes.labelsize': 11,
+    'xtick.labelsize': 10,
+    'ytick.labelsize': 10,
+    'legend.fontsize': 10,
+})
+
+# Shared export settings to guarantee identical figure dimensions across combined plots
+FIG_SIZE_COMBINED = (7.5, 6.2)  # inches
+DPI_EXPORT = 400
+
 from mp_movement_classifier.utils.utils import (
     process_motion_data,
     load_model_with_full_state,
@@ -55,7 +70,7 @@ def _plot_combined_pca_variance(explained_by_model: dict, out_dir: Path, upto: i
     if max_len <= 0:
         raise ValueError("Explained variance arrays are empty")
 
-    plt.figure(figsize=(10, 7))
+    plt.figure(figsize=FIG_SIZE_COMBINED)  # ~2250x1860 px at 300 dpi
 
     colors = {
         'TMP': '#1f77b4',
@@ -70,10 +85,10 @@ def _plot_combined_pca_variance(explained_by_model: dict, out_dir: Path, upto: i
         upto_i = min(max_len, len(ratios))
         x_i = np.arange(1, upto_i + 1)
         cumsum_i = np.cumsum(ratios[:upto_i])
-        plt.plot(x_i, cumsum_i, label=name, linewidth=2, marker='o', markersize=4, color=colors.get(name))
+        plt.plot(x_i, cumsum_i, label=name, linewidth=3.0, marker='o', markersize=6, color=colors.get(name))
 
-    plt.axhline(y=0.90, color='r', linestyle='--', linewidth=1.5, label='90%')
-    plt.axhline(y=0.95, color='g', linestyle='--', linewidth=1.5, label='95%')
+    plt.axhline(y=0.90, color='r', linestyle='--', linewidth=2.0, label='90%')
+    plt.axhline(y=0.95, color='g', linestyle='--', linewidth=2.0, label='95%')
     plt.xlabel('Number of Components')
     plt.ylabel('Cumulative Explained Variance')
     plt.title('Cumulative PCA Explained Variance (Combined)')
@@ -82,8 +97,102 @@ def _plot_combined_pca_variance(explained_by_model: dict, out_dir: Path, upto: i
     _ensure_dir(out_dir)
     out_path = out_dir / 'pca_cumulative_variance_combined.png'
     plt.tight_layout()
-    plt.savefig(out_path, dpi=200)
+    plt.savefig(out_path, dpi=DPI_EXPORT, bbox_inches='tight', facecolor='white')
     plt.close()
+    return out_path
+
+
+def _plot_combined_pca_histograms(explained_by_model: dict, out_dir: Path, upto: int = 20) -> Path:
+    """
+    Create a single figure (no subplots) that contains THREE histograms together:
+    per-component explained variance ratios for TMP, AE, and Legendre on one Axes.
+    Bars are grouped side-by-side per component index using small x-offsets.
+    Colors are consistent with the combined variance plot. No 90%/95% lines.
+    """
+    if not explained_by_model:
+        raise ValueError("No PCA explained variance data provided for combined histogram plot")
+
+    # Prepare colors and plotting order
+    colors = {
+        'TMP': '#1f77b4',
+        'AE': '#ff7f0e',
+        'Legendre': '#2ca02c',
+    }
+    model_order = [m for m in ['TMP', 'AE', 'Legendre'] if m in explained_by_model]
+    if not model_order:
+        model_order = list(explained_by_model.keys())
+
+    # Determine per-model component caps and global axes limits
+    upto_per_model = {}
+    global_max_x = 0
+    global_max_y = 0.0
+    for name in model_order:
+        ratios = explained_by_model.get(name)
+        if ratios is None or len(ratios) == 0:
+            upto_per_model[name] = 0
+            continue
+        upto_i = min(upto, len(ratios))
+        upto_per_model[name] = upto_i
+        global_max_x = max(global_max_x, upto_i)
+        if upto_i > 0:
+            global_max_y = max(global_max_y, float(np.max(ratios[:upto_i])))
+
+    # Setup single figure and axes (publication settings handled globally)
+    fig, ax = plt.subplots(1, 1, figsize=FIG_SIZE_COMBINED)
+
+    # Compute bar placement: side-by-side groups per PC
+    n_series = sum(1 for name in model_order if upto_per_model.get(name, 0) > 0)
+    if n_series == 0:
+        raise ValueError("No non-empty PCA explained variance arrays provided")
+
+    # Total group width in data units; distribute among series (wider groups)
+    group_width = 0.96
+    bar_width = group_width / n_series
+
+    # Offsets centered around each integer x position (1..global_max_x)
+    # Example for 3 series: offsets = [-bar_width, 0, +bar_width]
+    offsets = []
+    start = - (n_series - 1) / 2.0 * bar_width
+    for i in range(n_series):
+        offsets.append(start + i * bar_width)
+
+    # Map model -> offset index for deterministic ordering
+    visible_models = [name for name in model_order if upto_per_model.get(name, 0) > 0]
+
+    # Optional: nicer y tick formatting
+    try:
+        from matplotlib.ticker import FormatStrFormatter
+        ax.yaxis.set_major_formatter(FormatStrFormatter('%.3f'))
+    except Exception:
+        pass
+
+    # Plot each model's bars (thicker, higher alpha)
+    for idx, name in enumerate(visible_models):
+        ratios = explained_by_model[name]
+        upto_i = upto_per_model[name]
+        if upto_i <= 0:
+            continue
+        x = np.arange(1, global_max_x + 1)
+        # Build y with zeros beyond available PCs so groups stay aligned
+        y = np.zeros_like(x, dtype=float)
+        y[:upto_i] = ratios[:upto_i]
+        ax.bar(x + offsets[idx], y, width=bar_width, color=colors.get(name),
+               alpha=0.95, edgecolor='black', linewidth=0.8, label=name)
+
+    # Axes styling
+    ax.set_xlim(0.5, global_max_x + 0.5)
+    ax.set_ylim(0.0, min(1.0, max(0.05, global_max_y * 1.1)))
+    ax.set_xlabel('Principal Component')
+    ax.set_ylabel('Explained Variance')
+    ax.set_title('Variance Explained by Each PC (Combined)')
+    ax.grid(True, axis='y', alpha=0.3)
+    ax.legend()
+
+    _ensure_dir(out_dir)
+    out_path = out_dir / 'pca_variance_explained_hist_combined.png'
+    plt.tight_layout()
+    fig.savefig(out_path, dpi=DPI_EXPORT, bbox_inches='tight', facecolor='white')
+    plt.close(fig)
     return out_path
 
 
@@ -360,8 +469,10 @@ def main() -> None:
         combined_dir = Path(__file__).resolve().parents[2] / 'results' / 'tmp_configs' / 'new_seg_pymotion_position_mp_model'
 
     if explained_by_model:
-        out_path = _plot_combined_pca_variance(explained_by_model, combined_dir)
-        print(f"[Combined] PCA cumulative variance plot saved to: {out_path}")
+        out_path_var = _plot_combined_pca_variance(explained_by_model, combined_dir)
+        print(f"[Combined] PCA cumulative variance plot saved to: {out_path_var}")
+        out_path_hist = _plot_combined_pca_histograms(explained_by_model, combined_dir)
+        print(f"[Combined] PCA variance explained histogram (stacked) saved to: {out_path_hist}")
     else:
         print("[Combined] Skipped: no PCA outputs available from selected models.")
 

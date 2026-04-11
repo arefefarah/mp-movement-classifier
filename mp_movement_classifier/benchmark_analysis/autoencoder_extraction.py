@@ -591,7 +591,7 @@ def analyze_variance_explained(representations):
 
 def main():
     num_MPs = 5
-    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_pymotion_position_mp_model_{num_MPs}_phase_two")
+    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_mp_model_{num_MPs}_phase_three")
     out_dir = os.path.join(model_dir, "autoencoder_analysis")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -663,25 +663,25 @@ def main():
     print(f"Model parameters: {n_params:,}")
 
     # Step 4: Train autoencoder
-    # print("\n[4/7] Training autoencoder...")
-    # model, train_losses, val_losses = train_autoencoder(
-    #     model, train_loader, val_loader,
-    #     n_epochs=CONFIG['n_epochs'],
-    #     lr=CONFIG['lr'],
-    #     device=CONFIG['device'],
-    #     save_path=MODEL_SAVE_DIR / 'best_autoencoder.pt'
-    # )
+    print("\n[4/7] Training autoencoder...")
+    model, train_losses, val_losses = train_autoencoder(
+        model, train_loader, val_loader,
+        n_epochs=CONFIG['n_epochs'],
+        lr=CONFIG['lr'],
+        device=CONFIG['device'],
+        save_path=MODEL_SAVE_DIR / 'best_autoencoder.pt'
+    )
 
-    # # Plot training curves
-    # fig = plot_training_curves(train_losses, val_losses)
-    # fig.savefig(RESULTS_DIR / 'training_curves.png', dpi=300, bbox_inches='tight')
-    # plt.close()
+    # Plot training curves
+    fig = plot_training_curves(train_losses, val_losses)
+    fig.savefig(RESULTS_DIR / 'training_curves.png', dpi=300, bbox_inches='tight')
+    plt.close()
 
-    print("\n[4/7] loading autoencoder, skip training...")
-    checkpoint = torch.load(MODEL_SAVE_DIR / 'best_autoencoder.pt')
-    model.load_state_dict(checkpoint['model_state_dict'])
-    # Move to device and set to evaluation mode
-    model = model.to(CONFIG['device'])
+    # print("\n[4/7] loading autoencoder, skip training...")
+    # checkpoint = torch.load(MODEL_SAVE_DIR / 'best_autoencoder.pt')
+    # model.load_state_dict(checkpoint['model_state_dict'])
+    # # Move to device and set to evaluation mode
+    # model = model.to(CONFIG['device'])
 
     # Step 5: Extract representations
     print("\n[5/7] Extracting latent representations...")

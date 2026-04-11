@@ -49,7 +49,7 @@ def prepare_save_paths(num_mps: int, cutoff_freq: float, num_t_points: int, mode
     Prepare save paths for model and figures.
     """
     # model_dir = os.path.join(config.SAVING_DIR, f"new_seg_exponential_mp_model_{num_mps}_tpoints_{num_t_points}_phase_two")
-    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_pymotion_position_mp_model_{num_mps}_phase_two")
+    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_mp_model_{num_mps}_tpoints_{num_t_points}_phase_three")
     os.makedirs(model_dir, exist_ok=True)
 
     model_name = f"mp_model_{num_mps}_PC_tpoints_{num_t_points}"
