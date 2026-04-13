@@ -18,7 +18,8 @@ from sklearn.model_selection import cross_val_score
 from sklearn.decomposition import PCA
 from pathlib import Path
 from mp_movement_classifier.utils import config
-from mp_movement_classifier.classification.classification import calculate_rdm
+from mp_movement_classifier.classification.utils import calculate_rdm
+from mp_movement_classifier.classification.classification_pipeline import run_classification_pipeline
 from mp_movement_classifier.tmp_extraction.weight_visulaization import (extract_and_save_avg_weights_for_motions,
                                                                         load_motion_mapping,
                                                                         weights_barplot_across_channels)
@@ -693,7 +694,7 @@ def main():
     num_MPs = 5
 
     model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_mp_model_{num_MPs}_phase_three")
-    out_dir = os.path.join(model_dir, "legandre_analysis")
+    out_dir = os.path.join(model_dir, "legendre_analysis")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     # folder_path = "./../../data/pymotion_exponential_csv_files"
@@ -734,8 +735,6 @@ def main():
     print(f"Label array shape: {y.shape}")
     print(f" {len(np.unique(y))} unique motion types")
 
-    # Unified classification pipeline for Legendre features
-    from mp_movement_classifier.classification.pipeline import run_classification_pipeline
     # Build feature names: deg_k_signal_j
     max_degree_local = max_degree
     # Determine n_signals from coefficients shape: first sample has shape (n_signals, max_degree+1)
@@ -756,19 +755,9 @@ def main():
         also_run_random_forest=False,
         fixed_cm_vmin=0.0,
         fixed_cm_vmax=1.0,
-        seed=42,
+        seed=42,cv_folds=5,
+        perform_cv=True
     )
-
-    # Keep existing visual analyses
-    pca = visualize_with_pca(X, y, out_dir)
-    print(f"Total variance explained by 2 PCs: {sum(pca.explained_variance_ratio_[:2]):.4f}")
-
-    tsne = visualize_with_tsne(X, y, out_dir)
-
-    rdm_results = calculate_rdm(
-        X=X,
-        y=y,
-        out_dir=out_dir )
 
     figures = plot_coefficient_distributions(
         coefficients,

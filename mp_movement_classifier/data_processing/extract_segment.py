@@ -6,7 +6,6 @@ from pathlib import Path
 import json
 import pandas as pd
 
-from mp_movement_classifier.classification.classification import data_dir
 from mp_movement_classifier.utils.utils import read_bvh_files, process_bvh_data,process_motion_data
 
 data_dir = "../../data/pymotion_position_csv_files"

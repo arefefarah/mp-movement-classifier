@@ -7,6 +7,7 @@ from typing import List, Tuple
 
 import numpy as np
 import torch
+import seaborn as sns
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -31,10 +32,10 @@ from mp_movement_classifier.utils.utils import (
     load_model_with_full_state,
 )
 
-from mp_movement_classifier.classification.classification_utils import (
+from mp_movement_classifier.classification.utils import (
     prepare_weights_for_classification,
 )
-from mp_movement_classifier.classification.pipeline import run_classification_pipeline
+from mp_movement_classifier.classification.classification_pipeline import run_classification_pipeline
 
 # Optional imports from existing modules to reuse AE/Legendre utilities
 from mp_movement_classifier.benchmark_analysis.autoencoder_extraction import (
@@ -229,27 +230,23 @@ def _run_tmp(data_dir: str, tmp_model_dir: str, seed: int,
     _ensure_dir(out_dir)
 
     print("[TMP] Running unified classification pipeline...")
-    res = run_classification_pipeline(
+    results = run_classification_pipeline(
         X=X, y=y, out_dir=out_dir,
         feature_names=feature_names,
         feature_structure={'n_signals': num_signals, 'n_features_per_signal': model.num_MPs},
         primary_classifier=primary_classifier,
         also_run_random_forest=also_run_rf,
         seed=seed,
+        cv_folds=5, perform_cv=True
     )
     print(f"[TMP] Done. Artifacts: {out_dir}")
-    # Return PCA explained variance ratio for combined plotting
-    try:
-        return res.get('pca', {}).get('explained_variance_ratio', None)
-    except Exception:
-        return None
-
+    # Return the full results dictionary
+    return results
 
 def _ae_default_out_dir(ae_model_path: str) -> Path:
     # Place results under the model folder's parent results dir if possible
     p = Path(ae_model_path).resolve()
     return p.parent.parent
-
 
 def _run_ae(data_dir: str, ae_model_path: str, ae_out_dir: str | None, seed: int,
             primary_classifier: str, also_run_rf: bool, cache_dir: str):
@@ -327,19 +324,18 @@ def _run_ae(data_dir: str, ae_model_path: str, ae_out_dir: str | None, seed: int
     _ensure_dir(cls_out_dir)
 
     print("[AE] Running unified classification pipeline...")
-    res = run_classification_pipeline(
+    results = run_classification_pipeline(
         X=X_latent, y=y_latent, out_dir=cls_out_dir,
         feature_names=feature_names,
         feature_structure={'n_features': X_latent.shape[1]},
         primary_classifier=primary_classifier,
         also_run_random_forest=also_run_rf,
         seed=seed,
+        cv_folds=5, perform_cv=True
     )
     print(f"[AE] Done. Artifacts: {cls_out_dir}")
-    try:
-        return res.get('pca', {}).get('explained_variance_ratio', None)
-    except Exception:
-        return None
+    # Return the full results dictionary
+    return results
 
 
 def _run_legendre(data_dir: str, legendre_out_dir: str | None, seed: int,
@@ -366,19 +362,208 @@ def _run_legendre(data_dir: str, legendre_out_dir: str | None, seed: int,
     _ensure_dir(cls_out_dir)
 
     print("[Legendre] Running unified classification pipeline...")
-    res = run_classification_pipeline(
+    results = run_classification_pipeline(
         X=X, y=y, out_dir=cls_out_dir,
         feature_names=feature_names,
         feature_structure={'n_signals': n_signals, 'n_features_per_signal': max_degree + 1},
         primary_classifier=primary_classifier,
         also_run_random_forest=also_run_rf,
         seed=seed,
+        cv_folds=5, perform_cv=True
     )
     print(f"[Legendre] Done. Artifacts: {cls_out_dir}")
-    try:
-        return res.get('pca', {}).get('explained_variance_ratio', None)
-    except Exception:
+    # Return the full results dictionary
+    return results
+
+
+def _plot_cross_validation_comparison(results_by_model: dict, combined_out_dir: Path) -> Path:
+    """
+    Create a focused, publication-quality comparison plot with optimized y-axis ranges and compact model spacing.
+    """
+    # Set style
+    plt.style.use('default')
+    sns.set_palette("Set2")
+
+    # Extract CV results
+    cv_data = {}
+    model_names = {'tmp': 'TMP', 'ae': 'Autoencoder', 'legendre': 'Legendre'}
+    metrics = ['accuracy', 'f1_macro', 'precision_macro', 'recall_macro']
+    metric_labels = {'accuracy': 'Accuracy', 'f1_macro': 'F1-Score',
+                     'precision_macro': 'Precision', 'recall_macro': 'Recall'}
+
+    for model_key, results in results_by_model.items():
+        if 'cross_validation' in results and 'linear_svc' in results['cross_validation']:
+            cv_results = results['cross_validation']['linear_svc']
+            cv_data[model_key] = cv_results
+        else:
+            print(f"Warning: No cross-validation results found for {model_key}")
+
+    if not cv_data:
+        print("No cross-validation data available for plotting")
         return None
+
+    # Calculate global min/max for focused y-axis
+    all_scores = []
+    for model_key, cv_results in cv_data.items():
+        for metric in metrics:
+            scores_key = f'{metric}_test_scores'
+            if scores_key in cv_results:
+                all_scores.extend(cv_results[scores_key])
+
+    global_min = min(all_scores) - 0.01
+    global_max = max(all_scores) + 0.01
+    y_range = global_max - global_min
+    y_padding = y_range * 0.1
+
+    # Create figure with same size but more compact internal spacing
+    fig, axes = plt.subplots(2, 2, figsize=(8, 6))
+    axes = axes.ravel()
+
+    # Modern color palette
+    colors = {'tmp': '#3498db', 'ae': '#e74c3c', 'legendre': '#2ecc71'}
+
+    for i, metric in enumerate(metrics):
+        ax = axes[i]
+
+        # Prepare data
+        plot_data = []
+        plot_labels = []
+        plot_colors = []
+        means = []
+
+        for model_key in ['tmp', 'ae', 'legendre']:
+            if model_key in cv_data:
+                scores_key = f'{metric}_test_scores'
+                if scores_key in cv_data[model_key]:
+                    scores = cv_data[model_key][scores_key]
+                    plot_data.append(scores)
+                    plot_labels.append(model_names[model_key])
+                    plot_colors.append(colors[model_key])
+                    means.append(np.mean(scores))
+
+        if not plot_data:
+            continue
+
+        # Create violin plots with COMPACT positioning
+        # Reduce spacing by using closer positions and smaller widths
+        positions = np.arange(1, len(plot_data) + 1) * 0.8  # Compress positions by 0.8x
+        violin_parts = ax.violinplot(plot_data, positions=positions, widths=0.5,  # Narrower violins
+                                     showmeans=False, showmedians=True, showextrema=False)
+
+        # Customize violin colors
+        for pc, color in zip(violin_parts['bodies'], plot_colors):
+            pc.set_facecolor(color)
+            pc.set_alpha(0.7)
+            pc.set_edgecolor('black')
+            pc.set_linewidth(0.8)
+
+        # Add mean markers with values - adjust positions to match violins
+        for j, (mean_val, color, label) in enumerate(zip(means, plot_colors, plot_labels)):
+            pos = positions[j]  # Use the same compressed positions
+            ax.scatter(pos, mean_val, color=color, s=100, marker='D',
+                       edgecolor='white', linewidth=2, zorder=5)
+            ax.text(pos, mean_val + y_range * 0.05, f'{mean_val:.3f}',
+                    ha='center', va='bottom', fontsize=10, fontweight='bold',
+                    bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8))
+
+        # Set focused y-axis range
+        ax.set_ylim(global_min - y_padding, global_max + y_padding)
+
+        # Adjust x-axis limits to be more compact around the data
+        if positions.size > 0:
+            x_margin = 0.3 # Reduced margin for more compact appearance
+            ax.set_xlim(positions[0] - x_margin, positions[-1] + x_margin)
+
+        # Styling
+        ax.set_title(metric_labels[metric], fontsize=13, fontweight='bold', pad=10)
+        ax.set_ylabel('Score', fontsize=11, fontweight='bold')
+        ax.set_xticks(positions)
+        ax.set_xticklabels(plot_labels, fontsize=10, fontweight='bold')
+        ax.grid(True, alpha=0.3, linestyle='--', axis='y')
+
+        # Add subtle background
+        ax.set_facecolor('#fafafa')
+
+    # Overall styling
+    # fig.suptitle('Cross-Validation Performance Comparison\n5-fold CV with LinearSVC',
+    #              fontsize=15, fontweight='bold', y=0.96)
+
+    # Adjust subplot spacing for better compact look
+    plt.subplots_adjust(top=0.92, bottom=0.08, left=0.08, right=0.95,
+                        wspace=0.25, hspace=0.3)  # Use subplots_adjust instead
+
+    # Save
+    out_path = combined_out_dir / 'cross_validation_comparison_focused.png'
+    plt.savefig(out_path, dpi=300, bbox_inches='tight', facecolor='white')
+    plt.savefig(out_path.with_suffix('.svg'), bbox_inches='tight', facecolor='white')
+    plt.close()
+
+    print(f"\nFigure saved to: {out_path}")
+
+
+    return out_path
+
+
+def _create_cv_summary_table(results_by_model: dict, combined_out_dir: Path) -> Path:
+    """
+    Create a summary table of cross-validation results for easy comparison.
+    """
+    import pandas as pd
+
+    model_names = {'tmp': 'TMP', 'ae': 'Autoencoder', 'legendre': 'Legendre'}
+    metrics = ['accuracy', 'f1_macro', 'precision_macro', 'recall_macro']
+
+    summary_data = []
+
+    for model_key, results in results_by_model.items():
+        if 'cross_validation' in results and 'linear_svc' in results['cross_validation']:
+            cv_results = results['cross_validation']['linear_svc']
+            row = {'Model': model_names.get(model_key, model_key)}
+
+            for metric in metrics:
+                mean_key = f'{metric}_test_mean'
+                std_key = f'{metric}_test_std'
+                gap_key = f'{metric}_generalization_gap'
+
+                if mean_key in cv_results:
+                    mean_val = cv_results[mean_key]
+                    std_val = cv_results[std_key]
+                    gap_val = cv_results.get(gap_key, 0)
+
+                    row[f'{metric.title()}_Mean'] = f"{mean_val:.4f}"
+                    row[f'{metric.title()}_Std'] = f"{std_val:.4f}"
+                    row[f'{metric.title()}_Gap'] = f"{gap_val:.4f}"
+
+            summary_data.append(row)
+
+    if summary_data:
+        df = pd.DataFrame(summary_data)
+        csv_path = combined_out_dir / 'cross_validation_summary.csv'
+        df.to_csv(csv_path, index=False)
+        print(f"CV summary table saved to: {csv_path}")
+        return csv_path
+
+    return None
+
+
+def create_cross_validation_comparison(results_by_model: dict, combined_out_dir: Path):
+
+    print("\n" + "=" * 60)
+    print("CREATING CROSS-VALIDATION COMPARISON")
+    print("=" * 60)
+
+    # Create the comparison plot
+    plot_path = _plot_cross_validation_comparison(results_by_model, combined_out_dir)
+
+    # Create summary table
+    table_path = _create_cv_summary_table(results_by_model, combined_out_dir)
+
+    if plot_path:
+        print(f"Cross-validation comparison plot created: {plot_path}")
+    if table_path:
+        print(f"Cross-validation summary table created: {table_path}")
+
+    return plot_path, table_path
 
 
 def parse_args() -> argparse.Namespace:
@@ -413,31 +598,35 @@ def parse_args() -> argparse.Namespace:
 
     return parser.parse_args()
 
-
 def main() -> None:
     args = parse_args()
 
     also_run_rf = bool(args.rf)
 
+    # Store both PCA data for combined plots AND full results for CV comparison
     explained_by_model = {}
+    results_by_model = {}
 
     if 'tmp' in args.models:
         if not args.tmp_model_dir:
             raise ValueError("--tmp-model-dir is required when including 'tmp' in --models")
-        tmp_ev = _run_tmp(
+        tmp_results = _run_tmp(
             data_dir=args.data_dir,
             tmp_model_dir=args.tmp_model_dir,
             seed=args.seed,
             primary_classifier=args.primary_classifier,
             also_run_rf=also_run_rf,
         )
-        if tmp_ev is not None:
-            explained_by_model['TMP'] = tmp_ev
+        # Store full results for CV comparison
+        results_by_model['tmp'] = tmp_results
+        # Extract PCA data for combined plots
+        if tmp_results and 'pca' in tmp_results:
+            explained_by_model['TMP'] = tmp_results['pca'].get('explained_variance_ratio', None)
 
     if 'ae' in args.models:
         if not args.ae_model_path:
             raise ValueError("--ae-model-path is required when including 'ae' in --models")
-        ae_ev = _run_ae(
+        ae_results = _run_ae(
             data_dir=args.data_dir,
             ae_model_path=args.ae_model_path,
             ae_out_dir=args.ae_out_dir,
@@ -446,19 +635,25 @@ def main() -> None:
             also_run_rf=also_run_rf,
             cache_dir=args.cache_dir,
         )
-        if ae_ev is not None:
-            explained_by_model['AE'] = ae_ev
+        # Store full results for CV comparison
+        results_by_model['ae'] = ae_results
+        # Extract PCA data for combined plots
+        if ae_results and 'pca' in ae_results:
+            explained_by_model['AE'] = ae_results['pca'].get('explained_variance_ratio', None)
 
     if 'legendre' in args.models:
-        leg_ev = _run_legendre(
+        leg_results = _run_legendre(
             data_dir=args.data_dir,
             legendre_out_dir=args.legendre_out_dir,
             seed=args.seed,
             primary_classifier=args.primary_classifier,
             also_run_rf=also_run_rf,
         )
-        if leg_ev is not None:
-            explained_by_model['Legendre'] = leg_ev
+        # Store full results for CV comparison
+        results_by_model['legendre'] = leg_results
+        # Extract PCA data for combined plots
+        if leg_results and 'pca' in leg_results:
+            explained_by_model['Legendre'] = leg_results['pca'].get('explained_variance_ratio', None)
 
     # Determine combined output directory
     if args.combined_out_dir:
@@ -468,13 +663,20 @@ def main() -> None:
     else:
         combined_dir = Path(__file__).resolve().parents[2] / 'results' / 'tmp_configs' / 'new_seg_pymotion_position_mp_model'
 
+    # Create combined PCA plots
     if explained_by_model:
         out_path_var = _plot_combined_pca_variance(explained_by_model, combined_dir)
         print(f"[Combined] PCA cumulative variance plot saved to: {out_path_var}")
         out_path_hist = _plot_combined_pca_histograms(explained_by_model, combined_dir)
         print(f"[Combined] PCA variance explained histogram (stacked) saved to: {out_path_hist}")
     else:
-        print("[Combined] Skipped: no PCA outputs available from selected models.")
+        print("[Combined] Skipped PCA plots: no PCA outputs available from selected models.")
+
+    # Create cross-validation comparison
+    if results_by_model:
+        create_cross_validation_comparison(results_by_model, combined_dir)
+    else:
+        print("[Combined] Skipped CV comparison: no results available from selected models.")
 
 
 if __name__ == '__main__':

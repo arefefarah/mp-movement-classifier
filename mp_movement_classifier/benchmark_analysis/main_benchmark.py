@@ -17,7 +17,7 @@ from sklearn.model_selection import cross_val_score
 from sklearn.decomposition import PCA
 from pathlib import Path
 from mp_movement_classifier.utils import config
-from mp_movement_classifier.classification.classification import calculate_rdm
+from mp_movement_classifier.classification.utils import calculate_rdm
 from mp_movement_classifier.utils.utils import (
     load_model_with_full_state,
     process_motion_data,
@@ -38,7 +38,7 @@ from typing import Optional, Tuple, List
 import pandas as pd
 import matplotlib
 
-from mp_movement_classifier.classification.classification import prepare_weights_for_classification
+from mp_movement_classifier.classification.utils import prepare_weights_for_classification
 from mp_movement_classifier.utils.utils import (
     load_model_with_full_state,
     process_motion_data,

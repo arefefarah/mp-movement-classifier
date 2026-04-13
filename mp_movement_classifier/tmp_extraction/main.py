@@ -23,8 +23,8 @@ from mp_movement_classifier.utils.plotting import (
     set_figures_directory
 )
 from mp_movement_classifier.utils import config
-from mp_movement_classifier.classification.classification import prepare_weights_for_classification
-from mp_movement_classifier.classification.pipeline import run_classification_pipeline
+from mp_movement_classifier.classification.utils import prepare_weights_for_classification
+from mp_movement_classifier.classification.classification_pipeline import run_classification_pipeline
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train and evaluate MP model on BVH data.")
@@ -48,7 +48,8 @@ def prepare_save_paths(num_mps: int, cutoff_freq: float, num_t_points: int, mode
     """
     Prepare save paths for model and figures.
     """
-    # model_dir = os.path.join(config.SAVING_DIR, f"new_seg_exponential_mp_model_{num_mps}_tpoints_{num_t_points}_phase_two")
+    # model_dir = os.path.join("./../../results/tmp_configs",
+    #                          f"new_seg_mp_model_{num_mps}_phase_three")
     model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_mp_model_{num_mps}_tpoints_{num_t_points}_phase_three")
     os.makedirs(model_dir, exist_ok=True)
 
@@ -398,11 +399,13 @@ def main() -> None:
     num_segments = len(processed_segments)
     print(f"Number of segments: {num_segments}")
     num_signals = processed_segments[0].shape[0]
+    processed_data = processed_segments
 
-    ms_segments, seg_means = subtract_segment_means(processed_segments)
-    # use mean subtracted segments instead full data
-    processed_data = ms_segments
-
+#####################
+    # # use mean subtracted segments instead full data
+    # ms_segments, seg_means = subtract_segment_means(processed_segments)
+    # processed_data = ms_segments
+######################
     # Prepare save paths (now returns model_dir as well)
     model_name, model_path, model_dir = prepare_save_paths(args.num_mps, args.cutoff_freq, args.num_t_points, model_name_suffix)
 
@@ -476,10 +479,11 @@ def main() -> None:
             fixed_cm_vmin=0.0,
             fixed_cm_vmax=1.0,
             seed=42,
+            cv_folds=5,perform_cv= True
         )
         print(f"  Classification artifacts saved to: {cls_out_dir}")
     except Exception as e:
-        print(f"[warning] Unified classification pipeline failed: {e}")
+        print(f"[warning] classification pipeline failed: {e}")
 
     print(f"\n✓ Experiment completed successfully!")
     print(f"  Model saved to: {model_path}")

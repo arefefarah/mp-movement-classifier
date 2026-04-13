@@ -22,7 +22,8 @@ from sklearn.model_selection import cross_val_score
 from sklearn.decomposition import PCA
 from pathlib import Path
 from mp_movement_classifier.utils import config
-from mp_movement_classifier.classification.classification import calculate_rdm
+
+from mp_movement_classifier.classification.classification_pipeline import run_classification_pipeline
 from mp_movement_classifier.utils.utils import (
     load_model_with_full_state,
     process_motion_data,
@@ -711,7 +712,6 @@ def main():
 
     # Step 7: Classification using unified pipeline on latent vectors
     print("\n[7/7] Classification with unified pipeline...")
-    from mp_movement_classifier.classification.pipeline import run_classification_pipeline
 
     # Combine train/test for a single split within the pipeline
     X_latent = np.vstack([train_repr, test_repr])
@@ -730,6 +730,7 @@ def main():
         fixed_cm_vmin=0.0,
         fixed_cm_vmax=1.0,
         seed=42,
+        cv_folds=5,perform_cv= True
     )
 
     print("\n" + "=" * 80)
