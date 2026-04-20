@@ -198,7 +198,7 @@ def _plot_combined_pca_histograms(explained_by_model: dict, out_dir: Path, upto:
 
 
 def _run_tmp(data_dir: str, tmp_model_dir: str, seed: int,
-             primary_classifier: str, also_run_rf: bool):
+             primary_classifier: str):
     print("[TMP] Loading data and model...")
     motion_ids, processed_segments, segment_motion_ids = process_motion_data(
         folder_path=data_dir, data_type='position', filtering=False
@@ -235,7 +235,7 @@ def _run_tmp(data_dir: str, tmp_model_dir: str, seed: int,
         feature_names=feature_names,
         feature_structure={'n_signals': num_signals, 'n_features_per_signal': model.num_MPs},
         primary_classifier=primary_classifier,
-        also_run_random_forest=also_run_rf,
+        run_all_classifiers=True,
         seed=seed,
         cv_folds=5, perform_cv=True
     )
@@ -249,7 +249,7 @@ def _ae_default_out_dir(ae_model_path: str) -> Path:
     return p.parent.parent
 
 def _run_ae(data_dir: str, ae_model_path: str, ae_out_dir: str | None, seed: int,
-            primary_classifier: str, also_run_rf: bool, cache_dir: str):
+            primary_classifier: str, cache_dir: str):
     print("[AE] Loading data...")
     motion_ids, processed_segments, segment_motion_ids = process_motion_data(
         folder_path=data_dir, data_type='position', filtering=False
@@ -329,7 +329,7 @@ def _run_ae(data_dir: str, ae_model_path: str, ae_out_dir: str | None, seed: int
         feature_names=feature_names,
         feature_structure={'n_features': X_latent.shape[1]},
         primary_classifier=primary_classifier,
-        also_run_random_forest=also_run_rf,
+        run_all_classifiers=True,
         seed=seed,
         cv_folds=5, perform_cv=True
     )
@@ -339,7 +339,7 @@ def _run_ae(data_dir: str, ae_model_path: str, ae_out_dir: str | None, seed: int
 
 
 def _run_legendre(data_dir: str, legendre_out_dir: str | None, seed: int,
-                  primary_classifier: str, also_run_rf: bool):
+                  primary_classifier: str):
     print("[Legendre] Loading data and computing coefficients...")
     motion_ids, processed_segments, segment_motion_ids = process_motion_data(
         folder_path=data_dir, data_type='position', filtering=False
@@ -367,7 +367,7 @@ def _run_legendre(data_dir: str, legendre_out_dir: str | None, seed: int,
         feature_names=feature_names,
         feature_structure={'n_signals': n_signals, 'n_features_per_signal': max_degree + 1},
         primary_classifier=primary_classifier,
-        also_run_random_forest=also_run_rf,
+        run_all_classifiers=True,
         seed=seed,
         cv_folds=5, perform_cv=True
     )
@@ -376,7 +376,8 @@ def _run_legendre(data_dir: str, legendre_out_dir: str | None, seed: int,
     return results
 
 
-def _plot_cross_validation_comparison(results_by_model: dict, combined_out_dir: Path) -> Path:
+def _plot_cross_validation_comparison(results_by_model: dict, combined_out_dir: Path,
+                                      classifier_key: str = 'random_forest') -> Path:
     """
     Create a focused, publication-quality comparison plot with optimized y-axis ranges and compact model spacing.
     """
@@ -392,11 +393,11 @@ def _plot_cross_validation_comparison(results_by_model: dict, combined_out_dir: 
                      'precision_macro': 'Precision', 'recall_macro': 'Recall'}
 
     for model_key, results in results_by_model.items():
-        if 'cross_validation' in results and 'linear_svc' in results['cross_validation']:
-            cv_results = results['cross_validation']['linear_svc']
+        if 'cross_validation' in results and classifier_key in results['cross_validation']:
+            cv_results = results['cross_validation'][classifier_key]
             cv_data[model_key] = cv_results
         else:
-            print(f"Warning: No cross-validation results found for {model_key}")
+            print(f"Warning: No CV results for {model_key} with classifier {classifier_key}")
 
     if not cv_data:
         print("No cross-validation data available for plotting")
@@ -484,16 +485,13 @@ def _plot_cross_validation_comparison(results_by_model: dict, combined_out_dir: 
         # Add subtle background
         ax.set_facecolor('#fafafa')
 
-    # Overall styling
-    # fig.suptitle('Cross-Validation Performance Comparison\n5-fold CV with LinearSVC',
-    #              fontsize=15, fontweight='bold', y=0.96)
 
     # Adjust subplot spacing for better compact look
     plt.subplots_adjust(top=0.92, bottom=0.08, left=0.08, right=0.95,
                         wspace=0.25, hspace=0.3)  # Use subplots_adjust instead
 
     # Save
-    out_path = combined_out_dir / 'cross_validation_comparison_focused.png'
+    out_path = combined_out_dir / f'cross_validation_comparison_{classifier_key}.png'
     plt.savefig(out_path, dpi=300, bbox_inches='tight', facecolor='white')
     plt.savefig(out_path.with_suffix('.svg'), bbox_inches='tight', facecolor='white')
     plt.close()
@@ -504,7 +502,8 @@ def _plot_cross_validation_comparison(results_by_model: dict, combined_out_dir: 
     return out_path
 
 
-def _create_cv_summary_table(results_by_model: dict, combined_out_dir: Path) -> Path:
+def _create_cv_summary_table(results_by_model: dict, combined_out_dir: Path,
+                             classifier_key: str = 'random_forest') -> Path:
     """
     Create a summary table of cross-validation results for easy comparison.
     """
@@ -516,8 +515,8 @@ def _create_cv_summary_table(results_by_model: dict, combined_out_dir: Path) -> 
     summary_data = []
 
     for model_key, results in results_by_model.items():
-        if 'cross_validation' in results and 'linear_svc' in results['cross_validation']:
-            cv_results = results['cross_validation']['linear_svc']
+        if 'cross_validation' in results and classifier_key in results['cross_validation']:
+            cv_results = results['cross_validation'][classifier_key]
             row = {'Model': model_names.get(model_key, model_key)}
 
             for metric in metrics:
@@ -546,17 +545,13 @@ def _create_cv_summary_table(results_by_model: dict, combined_out_dir: Path) -> 
     return None
 
 
-def create_cross_validation_comparison(results_by_model: dict, combined_out_dir: Path):
-
+def create_cross_validation_comparison(results_by_model: dict, combined_out_dir: Path,
+                                       classifier_key: str = 'random_forest'):
     print("\n" + "=" * 60)
     print("CREATING CROSS-VALIDATION COMPARISON")
     print("=" * 60)
-
-    # Create the comparison plot
-    plot_path = _plot_cross_validation_comparison(results_by_model, combined_out_dir)
-
-    # Create summary table
-    table_path = _create_cv_summary_table(results_by_model, combined_out_dir)
+    plot_path = _plot_cross_validation_comparison(results_by_model, combined_out_dir, classifier_key)
+    table_path = _create_cv_summary_table(results_by_model, combined_out_dir, classifier_key)
 
     if plot_path:
         print(f"Cross-validation comparison plot created: {plot_path}")
@@ -584,8 +579,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--legendre-out-dir', type=str, default=None, help='Output directory root for Legendre results (optional).')
 
     # Classification controls
-    parser.add_argument('--primary-classifier', type=str, choices=['linear_svc', 'random_forest'], default='linear_svc')
-    parser.add_argument('--rf', type=int, choices=[0, 1], default=1, help='Enable (1) or disable (0) secondary RandomForest run.')
+    parser.add_argument('--primary-classifier', type=str, choices=['linear_svc', 'random_forest'], default='random_forest')
     parser.add_argument('--seed', type=int, default=42)
 
     # Cache location
@@ -601,7 +595,6 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    also_run_rf = bool(args.rf)
 
     # Store both PCA data for combined plots AND full results for CV comparison
     explained_by_model = {}
@@ -615,7 +608,6 @@ def main() -> None:
             tmp_model_dir=args.tmp_model_dir,
             seed=args.seed,
             primary_classifier=args.primary_classifier,
-            also_run_rf=also_run_rf,
         )
         # Store full results for CV comparison
         results_by_model['tmp'] = tmp_results
@@ -632,7 +624,6 @@ def main() -> None:
             ae_out_dir=args.ae_out_dir,
             seed=args.seed,
             primary_classifier=args.primary_classifier,
-            also_run_rf=also_run_rf,
             cache_dir=args.cache_dir,
         )
         # Store full results for CV comparison
@@ -646,8 +637,7 @@ def main() -> None:
             data_dir=args.data_dir,
             legendre_out_dir=args.legendre_out_dir,
             seed=args.seed,
-            primary_classifier=args.primary_classifier,
-            also_run_rf=also_run_rf,
+            primary_classifier=args.primary_classifier
         )
         # Store full results for CV comparison
         results_by_model['legendre'] = leg_results
@@ -674,7 +664,8 @@ def main() -> None:
 
     # Create cross-validation comparison
     if results_by_model:
-        create_cross_validation_comparison(results_by_model, combined_dir)
+        create_cross_validation_comparison(results_by_model, combined_dir,
+                                           classifier_key=args.primary_classifier)
     else:
         print("[Combined] Skipped CV comparison: no results available from selected models.")
 

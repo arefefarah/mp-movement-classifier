@@ -726,7 +726,6 @@ def main():
         feature_names=feature_names,
         feature_structure={'n_features': train_repr.shape[1]},
         primary_classifier='linear_svc',
-        also_run_random_forest=False,
         fixed_cm_vmin=0.0,
         fixed_cm_vmax=1.0,
         seed=42,

@@ -43,7 +43,7 @@ Temporal Movement Primitives (TMP) extraction and multi‑model classification f
 ## Run classification only (no retraining)
 Use the multi‑model runner to classify existing features and compare outputs:
 ```
-python mp_movement_classifier/classification/run_classification_all_models.py \
+python run_classification_all_models.py \
   --models tmp ae legendre \
   --data-dir ../../data/pymotion_position_csv_files \
   --tmp-model-dir ../../results/tmp_configs/new_seg_mp_model_5_phase_three \

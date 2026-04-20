@@ -309,7 +309,14 @@ def set_camera_view(fig, view='right'):
     fig.update_layout(
         scene_camera=camera,
         scene=dict(
-            aspectmode='data',  # Maintain aspect ratio
+            aspectmode='data',  # Maintains the true physical proportions
+            # these 3 lines are for removing the checkborads but maintain the scale of skeleton
+            xaxis=dict(range=[-0.5, 0.5], visible=False),
+            yaxis=dict(range=[-0.5, 0.5], visible=False),
+            # for 2 special movment we need larger space
+            # xaxis=dict(range=[-2, 2], visible=False),
+            # yaxis=dict(range=[-2, 2], visible=False),
+            zaxis=dict(range=[-0.5, 2], visible=False)
         )
     )
 
@@ -341,23 +348,26 @@ def create_animation(motion_file_stem="subject_42_motion_02", camera_view='front
     viewer = Viewer(use_reloader=True, xy_size=5, framerate=30)
     Viewer.run = run_patched
     viewer.add_skeleton(pos[:, :, :], parents)
-    viewer.add_floor()
+    # comment out add_floor for for removing the checkborads
+    # viewer.add_floor()
+
     # viewer.run()
 
     print("Generating GIF... this may take a moment.")
     frames = []
-    for j in range(viewer.max_frames):
+    # for j in range(viewer.max_frames):
+    for j in range(30):
         fig = viewer._create_figure(frame=j)
         fig = set_camera_view(fig, camera_view)
 
-        img_bytes = fig.to_image(format="png", width=800, height=600, scale=2)
+        img_bytes = fig.to_image(format="png")
         frames.append(imageio.imread(img_bytes))
         if j % 20 == 0:
             print(f"Processed frame {j}/{viewer.max_frames}")
 
     output_filename = f'{motion_file_stem}_{camera_view}.gif'
     imageio.mimsave(Path(animations_save_dir) / output_filename, frames, fps=30, loop=0)
-    print(f"Saved animation with {camera_view} view")
+    print(f"Saved animation {output_filename} with {camera_view} view")
 
 def make_quaternions_continuous(quats):
     """
@@ -555,13 +565,13 @@ def main():
         motion_mapping = data["mapping"]
     id_to_motion_name = {id_val: motion_name for motion_name, id_val in motion_mapping.items()}
 
-    motions_to_visualize = [ "subject_16_motion_02" ,"subject_16_motion_05" ]
-    # motions_to_visualize = [
-    #     "subject_16_motion_02", "subject_9_motion_05","subject_59_motion_18","subject_12_motion_17","subject_2_motion_11",
-    #     "subject_28_motion_09","subject_23_motion_08","subject_21_motion_03", "subject_32_motion_00","subject_70_motion_06",
-    #     "subject_15_motion_01","subject_60_motion_12","subject_33_motion_00","subject_13_motion_07","subject_17_motion_13","subject_75_motion_10",
-    #     "subject_19_motion_14"
-    # ]
+    motions_to_visualize = [
+        # "subject_4_motion_05","subject_1_motion_03"  #crawling and cross leg sitting
+        # "subject_23_motion_13", "subject_8_motion_09","subject_5_motion_02","subject_5_motion_06",
+        # "subject_1_motion_03","subject_5_motion_14","subject_5_motion_12","subject_18_motion_08",
+        # "subject_8_motion_07","subject_33_motion_18","subject_1_motion_01","subject_4_motion_05",
+        # "subject_4_motion_17","subject_13_motion_11","subject_9_motion_10","subject_21_motion_00",
+    ]
     Segments_index = "../../data/segments_index.json"
     with open(Segments_index, 'r') as f:
         data = json.load(f)
@@ -577,15 +587,17 @@ def main():
 
     # visualize_segment_boundaries(motions_to_visualize, data, id_to_motion_name, folder_path, figures_dir, frame_time)
 
-    plot_single_joint_boundaries(
-        data,id_to_motion_name, frame_time, folder_path, figures_dir,
-        motion=motions_to_visualize[0],
-        joint_name="LAnkle",
-    )
+    # plot segments for figure in paper
+    # plot_single_joint_boundaries(
+    #     data,id_to_motion_name, frame_time, folder_path, figures_dir,
+    #     motion=motions_to_visualize[0],
+    #     joint_name="LAnkle",
+    # )
 
 
     # rotate camera view to right so that the front of subject can be seen
-    # create_animation(motion_file_stem="subject_4_motion_05", camera_view='right')
+    for motion in motions_to_visualize:
+        create_animation(motion_file_stem=motion, camera_view='right')
 
     # plot different represenation of motion trajectory
     # plot_diff_representations(  "subject_4_motion_05", joint_names)
