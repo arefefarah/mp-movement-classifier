@@ -28,29 +28,30 @@ from mp_movement_classifier.classification.classification_pipeline import run_cl
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train and evaluate MP model on BVH data.")
-    parser.add_argument("--num-mps", type=int, default=20, help="Number of movement primitives.")
-    parser.add_argument("--num-t-points", type=int, default=30, help="Number of time discretization points.")
-    parser.add_argument("--cutoff-freq", type=float, default=3, help="Cutoff frequency for preprocessing.")
+    parser.add_argument("--num-mps", type=int, default=5, help="Number of movement primitives.")
+    parser.add_argument("--num-t-points", type=int, default=20, help="Number of time discretization points.")
     parser.add_argument("--adam-steps", type=int, default=100, help="Number of ADAM optimization steps.")
     parser.add_argument("--bfgs-steps", type=int, default=30, help="Number of BFGS optimization steps.")
     parser.add_argument("--pca-init", action="store_true", default=True, help="Use PCA initialization.")
     parser.add_argument("--no-pca-init", dest="pca_init", action="store_false", help="Disable PCA initialization.")
     parser.add_argument("--load", action="store_true", help="Load an existing model if available.")
-    parser.add_argument("--optimize-t-points", action="store_false",
-                        help="Run optimization to find best num_t_points value.")
-    parser.add_argument("--t-points-values", type=int, nargs='+', default=None,
-                        help="Specific num_t_points values to test (e.g., --t-points-values 20 30 40 60)")
+    parser.add_argument("--optimize", action="store_true", default=False,
+                        help="Run optimization sweeps over num_t_points and num_mps.")
+    parser.add_argument("--t-points-values", type=int, nargs='+', default=[10, 15, 20, 25, 30, 35, 40],
+                        help="num_t_points values to sweep (num_MPs held at --num-mps).")
+    parser.add_argument("--num-mps-values", type=int, nargs='+', default=[2, 5, 8, 11, 14, 17, 20],
+                        help="num_mps values to sweep (num_t_points held at --num-t-points).")
 
     return parser.parse_args()
 
 
-def prepare_save_paths(num_mps: int, cutoff_freq: float, num_t_points: int, model_name_suffix: Optional[str]) -> Tuple[str, str, str]:
+def prepare_save_paths(num_mps: int, num_t_points: int, model_name_suffix: Optional[str]) -> Tuple[str, str, str]:
     """
     Prepare save paths for model and figures.
     """
-    # model_dir = os.path.join("./../../results/tmp_configs",
-    #                          f"new_seg_mp_model_{num_mps}_phase_three")
-    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_mp_model_{num_mps}_tpoints_{num_t_points}_phase_three")
+    model_dir = os.path.join("./../../results/tmp_configs",
+                             f"new_seg_mp_model_{num_mps}_phase_three")
+    # model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_mp_model_{num_mps}_tpoints_{num_t_points}_phase_three")
     os.makedirs(model_dir, exist_ok=True)
 
     model_name = f"mp_model_{num_mps}_PC_tpoints_{num_t_points}"
@@ -169,220 +170,174 @@ def evaluate_and_plot(
         )
 
 
-def optimize_num_t_points(
+def _run_sweep(
         processed_data: List[np.ndarray],
         num_mps: int,
-        test_values: Optional[List[int]] = None,
+        num_t_points: int,
+        adam_steps: int,
+        bfgs_steps: int,
+) -> Tuple[float, float]:
+    """Train one TMP configuration; return (lap_score, vaf)."""
+    num_segments = len(processed_data)
+    num_signals = processed_data[0].shape[0]
+    model = MP_model(
+        num_t_points=num_t_points,
+        num_MPs=num_mps,
+        num_segments=num_segments,
+        num_signals=num_signals,
+        init_data=processed_data,
+    )
+    model.learn(processed_data, adam_steps=adam_steps, bfgs_steps=bfgs_steps)
+    final_vaf = float(model.VAF_curve[-1])
+    lap_score = float(model.Laplace_approx(processed_data))
+    return lap_score, final_vaf
+
+
+def _save_sweep_outputs(
+        results: dict,
+        sweep_var: str,
+        fixed_desc: str,
+        save_dir: str,
+        file_stem: str,
+) -> None:
+    """Write txt report and 2-subplot figure (LAP + VAF) for a sweep."""
+    import matplotlib.pyplot as plt
+
+    os.makedirs(save_dir, exist_ok=True)
+    xs = results[sweep_var]
+    lap = results['lap_scores']
+    vaf = results['vaf_scores']
+    best_idx = int(np.argmax(lap))
+    best_x = xs[best_idx]
+
+    txt_path = os.path.join(save_dir, f"{file_stem}.txt")
+    with open(txt_path, 'w') as f:
+        f.write(f"TMP sweep over {sweep_var}\n")
+        f.write(f"Fixed: {fixed_desc}\n")
+        f.write("=" * 60 + "\n\n")
+        f.write(f"{sweep_var:<15} {'LAP Score':<15} {'VAF':<10}\n")
+        f.write("-" * 42 + "\n")
+        for i, x in enumerate(xs):
+            marker = " <- BEST" if i == best_idx else ""
+            f.write(f"{x:<15} {lap[i]:<15.2f} {vaf[i]:<10.4f}{marker}\n")
+        f.write(f"\nBest {sweep_var}: {best_x}\n")
+    print(f"Results saved to: {txt_path}")
+
+    fig, axes = plt.subplots(1, 2, figsize=(9, 4.5))
+    axes[0].plot(xs, lap, 'o-', linewidth=2, markersize=8)
+    axes[0].axvline(best_x, color='r', linestyle='--', label='Best')
+    axes[0].set_xlabel(sweep_var)
+    axes[0].set_ylabel('LAP Score (higher is better)')
+    axes[0].set_title('Model Evidence (Laplace Approximation)')
+    axes[0].set_xticks(xs)
+    axes[0].legend()
+    axes[0].grid(True, alpha=0.3)
+
+    axes[1].plot(xs, vaf, 'o-', linewidth=2, markersize=8, color='green')
+    axes[1].axvline(best_x, color='r', linestyle='--', label='Best')
+    axes[1].set_xlabel(sweep_var)
+    axes[1].set_ylabel('VAF (higher is better)')
+    axes[1].set_title('Variance Accounted For')
+    axes[1].set_xticks(xs)
+    axes[1].legend()
+    axes[1].grid(True, alpha=0.3)
+
+    fig.suptitle(f"TMP sweep: {sweep_var} ({fixed_desc})", fontsize=13)
+    plt.tight_layout()
+    plot_path = os.path.join(save_dir, f"{file_stem}.png")
+    plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+    svg_path = os.path.splitext(plot_path)[0] + '.svg'
+    plt.savefig(svg_path, bbox_inches='tight', facecolor='white')
+    plt.close()
+    print(f"Figure saved to: {plot_path}")
+
+
+def optimize_num_t_points(
+        processed_data: List[np.ndarray],
+        test_values: List[int],
+        fixed_num_mps: int,
         adam_steps: int = 500,
         bfgs_steps: int = 10,
         save_dir: Optional[str] = None,
 ) -> Tuple[int, dict]:
-    """
-    Find the optimal num_t_points by training models with different values
-    and comparing their performance using Laplace approximation (model evidence)
-    and VAF (Variance Accounted For).
-
-    Args:
-        processed_data: List of preprocessed motion segments
-        num_mps: Number of movement primitives to use
-        test_values: List of num_t_points values to test. If None, uses heuristic values
-        adam_steps: Number of ADAM optimization steps
-        bfgs_steps: Number of BFGS optimization steps
-        model_dir: Directory to save optimization results
-
-    Returns:
-        best_num_t_points: The optimal value
-        results: Dictionary containing all results for analysis
-    """
-
-    # Setup
-    num_segments = len(processed_data)
-    num_signals = processed_data[0].shape[0]
-    segment_lengths = np.array([seg.shape[1] for seg in processed_data])
-
-    # Determine test values based on data characteristics if not provided
-    if test_values is None:
-        median_length = int(np.median(segment_lengths))
-        test_values = [
-            median_length // 4,  # Very coarse
-            median_length // 2,  # Coarse
-            median_length,  # Matched to median
-            median_length * 2,  # Fine
-            median_length * 3,  # Very fine
-        ]
-        print(f"Auto-selected test values based on median segment length ({median_length}): {test_values}")
-
-    # Storage for results
-    results = {
-        'num_t_points': [],
-        'lap_scores': [],
-        'vaf_scores': [],
-        'final_log_p': [],
-        'convergence_steps': [],
-    }
+    """Sweep num_t_points with num_MPs held fixed at fixed_num_mps."""
+    results = {'num_t_points': [], 'lap_scores': [], 'vaf_scores': []}
 
     print(f"\n{'=' * 60}")
-    print(f"OPTIMIZING num_t_points")
-    print(f"{'=' * 60}")
-    print(f"Testing values: {test_values}")
-    print(f"Number of MPs: {num_mps}")
-    print(f"Number of segments: {num_segments}")
-    print(f"Segment length range: [{segment_lengths.min()}, {segment_lengths.max()}]")
+    print(f"SWEEP num_t_points (num_MPs fixed at {fixed_num_mps})")
+    print(f"Testing: {test_values}")
     print(f"{'=' * 60}\n")
 
-    for i, num_t_points in enumerate(test_values):
-        print(f"\n[{i + 1}/{len(test_values)}] Testing num_t_points = {num_t_points}")
-        print("-" * 50)
-
+    for i, ntp in enumerate(test_values):
+        print(f"[{i + 1}/{len(test_values)}] num_t_points = {ntp}")
         try:
-            # Initialize model with PCA
-            print(f"  Initializing model...")
-            model = MP_model(
-                num_t_points=num_t_points,
-                num_MPs=num_mps,
-                num_segments=num_segments,
-                num_signals=num_signals,
-                init_data=processed_data,
-            )
-
-            # Train model
-            print(f"  Training (ADAM={adam_steps}, BFGS={bfgs_steps})...")
-            model.learn(processed_data, adam_steps=adam_steps, bfgs_steps=bfgs_steps)
-
-            # Extract metrics
-            final_vaf = model.VAF_curve[-1]
-            final_log_p = model.learn_curve[-1].item() if torch.is_tensor(model.learn_curve[-1]) else model.learn_curve[
-                -1]
-            convergence_steps = len(model.learn_curve)
-
-            print(f"  Computing Laplace approximation...")
-            lap_score = model.Laplace_approx(processed_data)
-
-            # Store results
-            results['num_t_points'].append(num_t_points)
-            results['lap_scores'].append(lap_score)
-            results['vaf_scores'].append(final_vaf)
-            results['final_log_p'].append(final_log_p)
-            results['convergence_steps'].append(convergence_steps)
-
-            print(f"  ✓ Results:")
-            print(f"    - LAP score: {lap_score:.2f}")
-            print(f"    - VAF: {final_vaf:.4f}")
-            print(f"    - Final log P: {final_log_p:.2f}")
-            print(f"    - Convergence steps: {convergence_steps}")
-
+            lap, vaf = _run_sweep(processed_data, fixed_num_mps, ntp, adam_steps, bfgs_steps)
         except Exception as e:
-            print(f"  ✗ Failed with error: {e}")
-            results['num_t_points'].append(num_t_points)
-            results['lap_scores'].append(-np.inf)
-            results['vaf_scores'].append(0.0)
-            results['final_log_p'].append(-np.inf)
-            results['convergence_steps'].append(0)
+            print(f"  failed: {e}")
+            lap, vaf = -np.inf, 0.0
+        results['num_t_points'].append(ntp)
+        results['lap_scores'].append(lap)
+        results['vaf_scores'].append(vaf)
+        print(f"  LAP={lap:.2f}  VAF={vaf:.4f}")
 
-    # Find best num_t_points based on LAP score (model evidence)
-    best_idx = np.argmax(results['lap_scores'])
+    best_idx = int(np.argmax(results['lap_scores']))
     best_num_t_points = results['num_t_points'][best_idx]
+    print(f"\nBest num_t_points: {best_num_t_points}\n")
 
-    print(f"\n{'=' * 60}")
-    print(f"OPTIMIZATION RESULTS")
-    print(f"{'=' * 60}")
-    print(f"\nComparison Table:")
-    print(f"{'num_t_points':<15} {'LAP Score':<15} {'VAF':<10} {'Log P':<15} {'Steps':<10}")
-    print("-" * 65)
-
-    for i in range(len(results['num_t_points'])):
-        marker = " ← BEST" if i == best_idx else ""
-        print(f"{results['num_t_points'][i]:<15} "
-              f"{results['lap_scores'][i]:<15.2f} "
-              f"{results['vaf_scores'][i]:<10.4f} "
-              f"{results['final_log_p'][i]:<15.2f} "
-              f"{results['convergence_steps'][i]:<10}{marker}")
-
-    print(f"\n{'=' * 60}")
-    print(f"BEST num_t_points: {best_num_t_points}")
-    print(f"  - LAP Score: {results['lap_scores'][best_idx]:.2f}")
-    print(f"  - VAF: {results['vaf_scores'][best_idx]:.4f}")
-    print(f"{'=' * 60}\n")
-
-    # Save results if directory provided
     if save_dir:
-        results_dir = os.path.join(save_dir, 'optimization')
-        os.makedirs(results_dir, exist_ok=True)
-
-        # Save numerical results
-        results_file = os.path.join(results_dir, 'num_t_points_optimization.txt')
-        with open(results_file, 'w') as f:
-            f.write(f"Optimization Results for num_t_points\n")
-            f.write(f"{'=' * 60}\n\n")
-            f.write(f"{'num_t_points':<15} {'LAP Score':<15} {'VAF':<10} {'Log P':<15} {'Steps':<10}\n")
-            f.write("-" * 65 + "\n")
-            for i in range(len(results['num_t_points'])):
-                marker = " ← BEST" if i == best_idx else ""
-                f.write(f"{results['num_t_points'][i]:<15} "
-                        f"{results['lap_scores'][i]:<15.2f} "
-                        f"{results['vaf_scores'][i]:<10.4f} "
-                        f"{results['final_log_p'][i]:<15.2f} "
-                        f"{results['convergence_steps'][i]:<10}{marker}\n")
-            f.write(f"\nBest num_t_points: {best_num_t_points}\n")
-
-        print(f"Results saved to: {results_file}")
-
-        # Create visualization plot
-        try:
-            import matplotlib.pyplot as plt
-
-            fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-            fig.suptitle('num_t_points Optimization Results', fontsize=16)
-
-            # LAP scores
-            axes[0, 0].plot(results['num_t_points'], results['lap_scores'], 'o-', linewidth=2, markersize=8)
-            axes[0, 0].axvline(best_num_t_points, color='r', linestyle='--', label='Best')
-            axes[0, 0].set_xlabel('num_t_points')
-            axes[0, 0].set_ylabel('LAP Score (higher is better)')
-            axes[0, 0].set_title('Model Evidence (Laplace Approximation)')
-            axes[0, 0].legend()
-            axes[0, 0].grid(True, alpha=0.3)
-
-            # VAF scores
-            axes[0, 1].plot(results['num_t_points'], results['vaf_scores'], 'o-', linewidth=2, markersize=8,
-                            color='green')
-            axes[0, 1].axvline(best_num_t_points, color='r', linestyle='--', label='Best')
-            axes[0, 1].set_xlabel('num_t_points')
-            axes[0, 1].set_ylabel('VAF (higher is better)')
-            axes[0, 1].set_title('Variance Accounted For')
-            axes[0, 1].legend()
-            axes[0, 1].grid(True, alpha=0.3)
-
-            # Log P
-            axes[1, 0].plot(results['num_t_points'], results['final_log_p'], 'o-', linewidth=2, markersize=8,
-                            color='orange')
-            axes[1, 0].axvline(best_num_t_points, color='r', linestyle='--', label='Best')
-            axes[1, 0].set_xlabel('num_t_points')
-            axes[1, 0].set_ylabel('Final Log P (higher is better)')
-            axes[1, 0].set_title('Final Joint Probability')
-            axes[1, 0].legend()
-            axes[1, 0].grid(True, alpha=0.3)
-
-            # Convergence steps
-            axes[1, 1].plot(results['num_t_points'], results['convergence_steps'], 'o-', linewidth=2, markersize=8,
-                            color='purple')
-            axes[1, 1].axvline(best_num_t_points, color='r', linestyle='--', label='Best')
-            axes[1, 1].set_xlabel('num_t_points')
-            axes[1, 1].set_ylabel('Convergence Steps')
-            axes[1, 1].set_title('Training Convergence')
-            axes[1, 1].legend()
-            axes[1, 1].grid(True, alpha=0.3)
-
-            plt.tight_layout()
-            plot_file = os.path.join(results_dir, 'num_t_points_optimization.png')
-            plt.savefig(plot_file, dpi=150, bbox_inches='tight')
-            plt.close()
-            print(f"Visualization saved to: {plot_file}")
-
-        except Exception as e:
-            print(f"Warning: Could not create visualization plot: {e}")
+        _save_sweep_outputs(
+            results=results,
+            sweep_var='num_t_points',
+            fixed_desc=f"num_MPs={fixed_num_mps}",
+            save_dir=save_dir,
+            file_stem='num_t_points_optimization',
+        )
 
     return best_num_t_points, results
+
+
+def optimize_num_mps(
+        processed_data: List[np.ndarray],
+        test_values: List[int],
+        fixed_num_t_points: int,
+        adam_steps: int = 500,
+        bfgs_steps: int = 10,
+        save_dir: Optional[str] = None,
+) -> Tuple[int, dict]:
+    """Sweep num_mps with num_t_points held fixed at fixed_num_t_points."""
+    results = {'num_mps': [], 'lap_scores': [], 'vaf_scores': []}
+
+    print(f"\n{'=' * 60}")
+    print(f"SWEEP num_mps (num_t_points fixed at {fixed_num_t_points})")
+    print(f"Testing: {test_values}")
+    print(f"{'=' * 60}\n")
+
+    for i, nm in enumerate(test_values):
+        print(f"[{i + 1}/{len(test_values)}] num_mps = {nm}")
+        try:
+            lap, vaf = _run_sweep(processed_data, nm, fixed_num_t_points, adam_steps, bfgs_steps)
+        except Exception as e:
+            print(f"  failed: {e}")
+            lap, vaf = -np.inf, 0.0
+        results['num_mps'].append(nm)
+        results['lap_scores'].append(lap)
+        results['vaf_scores'].append(vaf)
+        print(f"  LAP={lap:.2f}  VAF={vaf:.4f}")
+
+    best_idx = int(np.argmax(results['lap_scores']))
+    best_num_mps = results['num_mps'][best_idx]
+    print(f"\nBest num_mps: {best_num_mps}\n")
+
+    if save_dir:
+        _save_sweep_outputs(
+            results=results,
+            sweep_var='num_mps',
+            fixed_desc=f"num_t_points={fixed_num_t_points}",
+            save_dir=save_dir,
+            file_stem='num_mps_optimization',
+        )
+
+    return best_num_mps, results
 
 
 def main() -> None:
@@ -407,29 +362,36 @@ def main() -> None:
     # processed_data = ms_segments
 ######################
     # Prepare save paths (now returns model_dir as well)
-    model_name, model_path, model_dir = prepare_save_paths(args.num_mps, args.cutoff_freq, args.num_t_points, model_name_suffix)
+    model_name, model_path, model_dir = prepare_save_paths(args.num_mps,  args.num_t_points, model_name_suffix)
+    optimization_dir = os.path.join(model_dir, 'TMP_optimization')
 
-    # OPTIMIZATION MODE: Find best num_t_points
-    args.optimize_t_points = False
-    if args.optimize_t_points:
-        print("\n" + "=" * 60)
-        print("RUNNING num_t_points OPTIMIZATION")
-        print("=" * 60 + "\n")
+    # OPTIMIZATION MODE: sweep num_t_points and num_mps independently
+    if args.optimize:
+        os.makedirs(optimization_dir, exist_ok=True)
 
-        best_num_t_points, opt_results = optimize_num_t_points(
+        best_ntp, _ = optimize_num_t_points(
             processed_data=processed_data,
-            num_mps=args.num_mps,
             test_values=args.t_points_values,
+            fixed_num_mps=args.num_mps,
             adam_steps=args.adam_steps,
             bfgs_steps=args.bfgs_steps,
-            save_dir=model_dir,
+            save_dir=optimization_dir,
         )
 
-        print(f"\n✓ Optimization completed!")
-        print(f"  Recommended num_t_points: {best_num_t_points}")
-        print(f"  Use this value with: --num-t-points {best_num_t_points}")
+        best_nm, _ = optimize_num_mps(
+            processed_data=processed_data,
+            test_values=args.num_mps_values,
+            fixed_num_t_points=args.num_t_points,
+            adam_steps=args.adam_steps,
+            bfgs_steps=args.bfgs_steps,
+            save_dir=optimization_dir,
+        )
 
-        return  # Exit after optimization
+        print(f"\nOptimization complete.")
+        print(f"  Best num_t_points (num_MPs={args.num_mps}):    {best_ntp}")
+        print(f"  Best num_mps     (num_t_points={args.num_t_points}): {best_nm}")
+        print(f"  Outputs: {optimization_dir}")
+        return
 
     # Initialize or load model
     model = initialize_or_load_model(
@@ -443,15 +405,15 @@ def main() -> None:
         load_existing=args.load,
     )
 
-    # if not args.load:
+    if not args.load:
         # Train and persist
-    train_and_save(
-        model=model,
-        processed_data=processed_data,
-        model_path=model_path,
-        adam_steps=args.adam_steps,
-        bfgs_steps=args.bfgs_steps,
-    )
+        train_and_save(
+            model=model,
+            processed_data=processed_data,
+            model_path=model_path,
+            adam_steps=args.adam_steps,
+            bfgs_steps=args.bfgs_steps,
+        )
 
     # Evaluate and plot artifacts (now with model_dir)
     evaluate_and_plot(

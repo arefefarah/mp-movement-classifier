@@ -64,6 +64,7 @@ ipython_config.py
 # IDEs
 .vscode/
 .idea/
+.claude/
 *.swp
 *.swo
 *~

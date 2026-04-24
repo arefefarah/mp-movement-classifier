@@ -25,7 +25,6 @@ matplotlib.rcParams.update({
 
 # Shared export settings to guarantee identical figure dimensions across combined plots
 FIG_SIZE_COMBINED = (7.5, 6.2)  # inches
-DPI_EXPORT = 400
 
 from mp_movement_classifier.utils.utils import (
     process_motion_data,
@@ -34,6 +33,7 @@ from mp_movement_classifier.utils.utils import (
 
 from mp_movement_classifier.classification.utils import (
     prepare_weights_for_classification,
+    compute_classification_aic,
 )
 from mp_movement_classifier.classification.classification_pipeline import run_classification_pipeline
 
@@ -56,144 +56,122 @@ DEFAULT_CACHE_DIR = str(Path(__file__).resolve().parents[2] / 'data')
 
 def _ensure_dir(p: Path) -> None:
     p.mkdir(parents=True, exist_ok=True)
+def _plot_combined_pca_figure(explained_by_model: dict,
+                               out_dir: Path,
+                               upto_bars: int = 10,
+                               upto_cum: int | None = 80) -> Path:
+
+    from matplotlib.ticker import FormatStrFormatter, MaxNLocator
 
 
-def _plot_combined_pca_variance(explained_by_model: dict, out_dir: Path, upto: int = 80) -> Path:
-    """
-    Plot cumulative explained variance curves for multiple models on one figure.
-    explained_by_model: dict mapping model name -> 1D np.ndarray of explained_variance_ratio_.
-    """
-    if not explained_by_model:
-        raise ValueError("No PCA explained variance data provided for combined plot")
-
-    # Determine the maximum number of components to consider across all models
-    max_len = min(upto, max(len(v) for v in explained_by_model.values()))
-    if max_len <= 0:
-        raise ValueError("Explained variance arrays are empty")
-
-    plt.figure(figsize=FIG_SIZE_COMBINED)  # ~2250x1860 px at 300 dpi
-
-    colors = {
-        'TMP': '#1f77b4',
-        'AE': '#ff7f0e',
-        'Legendre': '#2ca02c',
-    }
-
-    # Plot each model with its own x-range to avoid dimension mismatch
-    for name, ratios in explained_by_model.items():
-        if ratios is None or len(ratios) == 0:
-            continue
-        upto_i = min(max_len, len(ratios))
-        x_i = np.arange(1, upto_i + 1)
-        cumsum_i = np.cumsum(ratios[:upto_i])
-        plt.plot(x_i, cumsum_i, label=name, linewidth=3.0, marker='o', markersize=6, color=colors.get(name))
-
-    plt.axhline(y=0.90, color='r', linestyle='--', linewidth=2.0, label='90%')
-    plt.axhline(y=0.95, color='g', linestyle='--', linewidth=2.0, label='95%')
-    plt.xlabel('Number of Components')
-    plt.ylabel('Cumulative Explained Variance')
-    plt.title('Cumulative PCA Explained Variance (Combined)')
-    plt.grid(True, alpha=0.3)
-    plt.legend()
-    _ensure_dir(out_dir)
-    out_path = out_dir / 'pca_cumulative_variance_combined.png'
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=DPI_EXPORT, bbox_inches='tight', facecolor='white')
-    plt.close()
-    return out_path
-
-
-def _plot_combined_pca_histograms(explained_by_model: dict, out_dir: Path, upto: int = 20) -> Path:
-    """
-    Create a single figure (no subplots) that contains THREE histograms together:
-    per-component explained variance ratios for TMP, AE, and Legendre on one Axes.
-    Bars are grouped side-by-side per component index using small x-offsets.
-    Colors are consistent with the combined variance plot. No 90%/95% lines.
-    """
-    if not explained_by_model:
-        raise ValueError("No PCA explained variance data provided for combined histogram plot")
-
-    # Prepare colors and plotting order
-    colors = {
-        'TMP': '#1f77b4',
-        'AE': '#ff7f0e',
-        'Legendre': '#2ca02c',
-    }
+    colors = {'TMP': '#1f77b4', 'AE': '#ff7f0e', 'Legendre': '#2ca02c'}
     model_order = [m for m in ['TMP', 'AE', 'Legendre'] if m in explained_by_model]
     if not model_order:
         model_order = list(explained_by_model.keys())
 
-    # Determine per-model component caps and global axes limits
-    upto_per_model = {}
-    global_max_x = 0
-    global_max_y = 0.0
-    for name in model_order:
-        ratios = explained_by_model.get(name)
-        if ratios is None or len(ratios) == 0:
-            upto_per_model[name] = 0
-            continue
-        upto_i = min(upto, len(ratios))
-        upto_per_model[name] = upto_i
-        global_max_x = max(global_max_x, upto_i)
-        if upto_i > 0:
-            global_max_y = max(global_max_y, float(np.max(ratios[:upto_i])))
-
-    # Setup single figure and axes (publication settings handled globally)
-    fig, ax = plt.subplots(1, 1, figsize=FIG_SIZE_COMBINED)
-
-    # Compute bar placement: side-by-side groups per PC
-    n_series = sum(1 for name in model_order if upto_per_model.get(name, 0) > 0)
-    if n_series == 0:
+    visible = [m for m in model_order
+               if explained_by_model.get(m) is not None and len(explained_by_model[m]) > 0]
+    if not visible:
         raise ValueError("No non-empty PCA explained variance arrays provided")
 
-    # Total group width in data units; distribute among series (wider groups)
-    group_width = 0.96
-    bar_width = group_width / n_series
+    def _pc_at(r, thr):
+        c = np.cumsum(np.asarray(r, dtype=float))
+        idx = np.where(c >= thr)[0]
+        return int(idx[0] + 1) if len(idx) else None
 
-    # Offsets centered around each integer x position (1..global_max_x)
-    # Example for 3 series: offsets = [-bar_width, 0, +bar_width]
-    offsets = []
-    start = - (n_series - 1) / 2.0 * bar_width
-    for i in range(n_series):
-        offsets.append(start + i * bar_width)
+    # Local rcParams — compact fonts suited to double-column manuscript width.
+    rc_local = {
+        'font.size': 8, 'axes.labelsize': 8, 'axes.titlesize': 9,
+        'xtick.labelsize': 7, 'ytick.labelsize': 7, 'legend.fontsize': 7,
+        'axes.linewidth': 0.6,
+        'xtick.major.width': 0.6, 'ytick.major.width': 0.6,
+    }
+    with plt.rc_context(rc_local):
+        fig, (ax1, ax2) = plt.subplots(
+            1, 2, figsize=(7.2, 2.6),
+            gridspec_kw={'width_ratios': [0.85, 1.15], 'wspace': 0.28}
+        )
 
-    # Map model -> offset index for deterministic ordering
-    visible_models = [name for name in model_order if upto_per_model.get(name, 0) > 0]
+        # ---------- (a) per-component bars ----------
+        n = len(visible)
+        gw, bw = 0.9, 0.9 / n
+        offs = np.linspace(-gw/2 + bw/2, gw/2 - bw/2, n)
+        x = np.arange(1, upto_bars + 1)
+        for i, name in enumerate(visible):
+            r = np.asarray(explained_by_model[name], dtype=float)
+            y = np.zeros(upto_bars)
+            k = min(upto_bars, len(r))
+            y[:k] = r[:k]
+            ax1.bar(x + offs[i], y, width=bw, color=colors.get(name),
+                    edgecolor='black', linewidth=0.3, label=name)
 
-    # Optional: nicer y tick formatting
-    try:
-        from matplotlib.ticker import FormatStrFormatter
-        ax.yaxis.set_major_formatter(FormatStrFormatter('%.3f'))
-    except Exception:
-        pass
+        ax1.set_xlabel('Principal component')
+        ax1.set_ylabel('Explained variance')
+        ax1.set_xlim(0.4, upto_bars + 0.6)
+        ax1.set_xticks(x)
+        ax1.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+        ax1.grid(True, axis='y', alpha=0.3, linewidth=0.4)
+        ax1.set_axisbelow(True)
+        ax1.legend(frameon=False, loc='upper right', handlelength=1.2)
+        ax1.text(-0.14, 1.02, 'a', transform=ax1.transAxes,
+                 fontsize=10, fontweight='bold', va='bottom')
 
-    # Plot each model's bars (thicker, higher alpha)
-    for idx, name in enumerate(visible_models):
-        ratios = explained_by_model[name]
-        upto_i = upto_per_model[name]
-        if upto_i <= 0:
-            continue
-        x = np.arange(1, global_max_x + 1)
-        # Build y with zeros beyond available PCs so groups stay aligned
-        y = np.zeros_like(x, dtype=float)
-        y[:upto_i] = ratios[:upto_i]
-        ax.bar(x + offsets[idx], y, width=bar_width, color=colors.get(name),
-               alpha=0.95, edgecolor='black', linewidth=0.8, label=name)
+        # ---------- (b) cumulative, capped at upto_cum ----------
+        actual_max = max(len(explained_by_model[n]) for n in visible)
+        max_len = actual_max if upto_cum is None else min(upto_cum, actual_max)
 
-    # Axes styling
-    ax.set_xlim(0.5, global_max_x + 0.5)
-    ax.set_ylim(0.0, min(1.0, max(0.05, global_max_y * 1.1)))
-    ax.set_xlabel('Principal Component')
-    ax.set_ylabel('Explained Variance')
-    ax.set_title('Variance Explained by Each PC (Combined)')
-    ax.grid(True, axis='y', alpha=0.3)
-    ax.legend()
+        crossings = []
+        for name in visible:
+            r = np.asarray(explained_by_model[name], dtype=float)
+            k_cap = min(max_len, len(r))
+            cum = np.cumsum(r[:k_cap])
+            xs = np.arange(1, k_cap + 1)
+            ax2.plot(xs, cum, color=colors.get(name), linewidth=1.2, label=name)
+            # Small markers only on the first 10 points — anchors the eye without clutter
+            m = min(10, k_cap)
+            ax2.plot(xs[:m], cum[:m], 'o', color=colors.get(name), markersize=2.2)
+            # 90% crossing (use full ratios, not truncated, in case 90% is past upto_cum)
+            k90 = _pc_at(r, 0.90)
+            if k90 is not None and k90 <= max_len:
+                crossings.append((name, k90))
+                ax2.plot([k90, k90], [0, 0.9], color=colors.get(name),
+                         linewidth=0.6, linestyle=':', alpha=0.7)
+                ax2.plot(k90, 0.9, 'o', color=colors.get(name), markersize=4,
+                         markeredgecolor='black', markeredgewidth=0.4, zorder=5)
+            elif k90 is not None:
+                # 90% threshold is beyond visible range — note it in the legend text
+                crossings.append((name, k90))
 
-    _ensure_dir(out_dir)
-    out_path = out_dir / 'pca_variance_explained_hist_combined.png'
-    plt.tight_layout()
-    fig.savefig(out_path, dpi=DPI_EXPORT, bbox_inches='tight', facecolor='white')
-    plt.close(fig)
+        # Threshold lines
+        for thr, ls, lbl in [(0.90, '--', '90%'), (0.95, ':', '95%')]:
+            ax2.axhline(thr, color='gray', linestyle=ls, linewidth=0.6, alpha=0.8)
+            ax2.text(max_len * 1.01, thr, lbl, fontsize=6, color='gray', va='center')
+
+        if crossings:
+            lines = [r'$n$ for 90% variance:'] + [f'  {n}: {k}' for n, k in crossings]
+            ax2.text(0.97, 0.05, '\n'.join(lines),
+                     transform=ax2.transAxes, fontsize=7, color='0.15',
+                     ha='right', va='bottom',
+                     bbox=dict(boxstyle='round,pad=0.35', facecolor='white',
+                               edgecolor='0.7', linewidth=0.4, alpha=0.95))
+
+        ax2.set_xlabel('Number of components')
+        ax2.set_ylabel('Cumulative explained variance')
+        ax2.set_xlim(0.5, max_len + 0.5)
+        ax2.set_ylim(0, 1.02)
+        ax2.xaxis.set_major_locator(MaxNLocator(integer=True, nbins=6))
+        ax2.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+        ax2.grid(True, alpha=0.3, linewidth=0.4)
+        ax2.set_axisbelow(True)
+        ax2.text(-0.12, 1.02, 'b', transform=ax2.transAxes,
+                 fontsize=10, fontweight='bold', va='bottom')
+
+        _ensure_dir(out_dir)
+        out_path = out_dir / 'pca_variance_combined.png'
+        fig.savefig(out_path, dpi=300, bbox_inches='tight', facecolor='white')
+        fig.savefig(out_path.with_suffix('.svg'), bbox_inches='tight', facecolor='white')
+        plt.close(fig)
+
     return out_path
 
 
@@ -207,13 +185,13 @@ def _run_tmp(data_dir: str, tmp_model_dir: str, seed: int,
     num_signals = processed_segments[0].shape[0]
 
     model_path = os.path.join(tmp_model_dir, 'mp_model_5_PC_tpoints_30')
-    # If a different filename pattern is used, allow the user to provide the full path in tmp_model_dir
-    if not os.path.exists(model_path):
-        # Try to find a single file starting with 'mp_model_' in the dir
-        candidates = [f for f in os.listdir(tmp_model_dir) if f.startswith('mp_model_')]
-        if not candidates:
-            raise FileNotFoundError(f"No TMP model file found under {tmp_model_dir}. Provide --tmp-model-dir pointing to the trained model directory.")
-        model_path = os.path.join(tmp_model_dir, candidates[0])
+    # # If a different filename pattern is used, allow the user to provide the full path in tmp_model_dir
+    # if not os.path.exists(model_path):
+    #     # Try to find a single file starting with 'mp_model_' in the dir
+    #     candidates = [f for f in os.listdir(tmp_model_dir) if f.startswith('mp_model_')]
+    #     if not candidates:
+    #         raise FileNotFoundError(f"No TMP model file found under {tmp_model_dir}. Provide --tmp-model-dir pointing to the trained model directory.")
+    #     model_path = os.path.join(tmp_model_dir, candidates[0])
 
     model = load_model_with_full_state(
         model_path, num_segments=num_segments, num_signals=num_signals
@@ -240,8 +218,7 @@ def _run_tmp(data_dir: str, tmp_model_dir: str, seed: int,
         cv_folds=5, perform_cv=True
     )
     print(f"[TMP] Done. Artifacts: {out_dir}")
-    # Return the full results dictionary
-    return results
+    return results, X, y
 
 def _ae_default_out_dir(ae_model_path: str) -> Path:
     # Place results under the model folder's parent results dir if possible
@@ -303,13 +280,16 @@ def _run_ae(data_dir: str, ae_model_path: str, ae_out_dir: str | None, seed: int
         print("[AE] Extracting latent representations (no training)...")
         from torch.utils.data import DataLoader
         train_loader = DataLoader(train_dataset, batch_size=32, shuffle=False, num_workers=2)
+        val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=2)
         test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=2)
 
+        #make same number of inputs for ae as legendre/TMP model
         train_repr, train_labels = extract_representations(model, train_loader, CONFIG['device'])
-        test_repr, test_labels = extract_representations(model, test_loader, CONFIG['device'])
+        val_repr,   val_labels   = extract_representations(model, val_loader,   CONFIG['device'])
+        test_repr,  test_labels  = extract_representations(model, test_loader,  CONFIG['device'])
 
-        X_latent = np.vstack([train_repr, test_repr])
-        y_latent = np.concatenate([train_labels, test_labels])
+        X_latent = np.vstack([train_repr, val_repr, test_repr])
+        y_latent = np.concatenate([train_labels, val_labels, test_labels])
 
         try:
             np.savez(cache_path, X=X_latent, y=y_latent)
@@ -334,8 +314,7 @@ def _run_ae(data_dir: str, ae_model_path: str, ae_out_dir: str | None, seed: int
         cv_folds=5, perform_cv=True
     )
     print(f"[AE] Done. Artifacts: {cls_out_dir}")
-    # Return the full results dictionary
-    return results
+    return results, X_latent, y_latent
 
 
 def _run_legendre(data_dir: str, legendre_out_dir: str | None, seed: int,
@@ -372,8 +351,7 @@ def _run_legendre(data_dir: str, legendre_out_dir: str | None, seed: int,
         cv_folds=5, perform_cv=True
     )
     print(f"[Legendre] Done. Artifacts: {cls_out_dir}")
-    # Return the full results dictionary
-    return results
+    return results, X, y
 
 
 def _plot_cross_validation_comparison(results_by_model: dict, combined_out_dir: Path,
@@ -561,6 +539,129 @@ def create_cross_validation_comparison(results_by_model: dict, combined_out_dir:
     return plot_path, table_path
 
 
+def run_aic_comparison(
+    X_by_model: dict,
+    combined_out_dir: Path,
+    seed: int = 42,
+    cv_folds: int = 5,
+) -> tuple:
+    """
+    AIC-based model comparison following Burnham & Anderson (2004).
+
+    X_by_model: dict mapping model key ('tmp'/'ae'/'legendre') -> (X, y) tuple
+    combined_out_dir: same output directory used for the CV comparison
+
+    AIC = 2k - 2*ln(L_cv)
+      k        = number of input features (representation dimensionality)
+      ln(L_cv) = cross-validated log-likelihood (5-fold, RF predict_proba)
+
+    Saves:
+      aic_comparison_results.csv
+      aic_comparison_report.txt
+    """
+    import pandas as pd
+
+    print("\n" + "=" * 60)
+    print("COMPUTING AIC-BASED MODEL COMPARISON")
+    print("=" * 60)
+
+    model_display = {'tmp': 'TMP', 'ae': 'Autoencoder', 'legendre': 'Legendre'}
+
+    aic_data = {}
+    for model_key, (X, y) in X_by_model.items():
+        name = model_display.get(model_key, model_key)
+        print(f"[AIC] {name}: k={X.shape[1]}, n_samples={X.shape[0]} — running {cv_folds}-fold CV...")
+        result = compute_classification_aic(X, y, seed=seed, cv_folds=cv_folds)
+        aic_data[model_key] = result
+        print(f"        ln(L_cv)={result['log_likelihood']:.4f}  AIC={result['aic']:.4f}")
+
+    min_aic = min(v['aic'] for v in aic_data.values())
+
+    rows = []
+    for model_key, data in aic_data.items():
+        delta_i = data['aic'] - min_aic
+        p_i = float(np.exp(-delta_i / 2.0))
+
+        if delta_i < 2.0:
+            evidence = "Substantial support (Δ < 2)"
+        elif delta_i < 4.0:
+            evidence = "Strong support (2 < Δ < 4)"
+        elif delta_i < 7.0:
+            evidence = "Considerably less support (4 < Δ < 7)"
+        elif delta_i < 10.0:
+            evidence = "Some support (7 < Δ < 10)"
+        else:
+            evidence = "Essentially no support (Δ > 10)"
+
+        rows.append({
+            'Model': model_display.get(model_key, model_key),
+            'k_features': data['k'],
+            'n_samples': data['n_samples'],
+            'log_likelihood_cv': round(data['log_likelihood'], 4),
+            'AIC': round(data['aic'], 4),
+            'delta_AIC': round(delta_i, 4),
+            'p_i': round(p_i, 6),
+            'evidence_Burnham_Anderson_2004': evidence,
+        })
+
+    rows.sort(key=lambda r: r['AIC'])
+
+    _ensure_dir(combined_out_dir)
+    csv_path = combined_out_dir / 'aic_comparison_results.csv'
+    pd.DataFrame(rows).to_csv(csv_path, index=False)
+    print(f"\n[AIC] Results CSV saved to: {csv_path}")
+
+    report_path = combined_out_dir / 'aic_comparison_report.txt'
+    best_model = rows[0]['Model']
+    with open(report_path, 'w') as f:
+        f.write("AIC-Based Model Comparison\n")
+        f.write("=" * 70 + "\n")
+        f.write("Reference : Burnham & Anderson (2004)\n")
+        f.write(f"Method    : {cv_folds}-fold cross-validated log-likelihood\n")
+        f.write("Classifier: Random Forest (n_estimators=200)\n")
+        f.write("k         : number of input features (representation dimensionality)\n")
+        f.write("AIC       : 2k - 2*ln(L_cv)\n")
+        f.write("Δ_i       : AIC_i - AIC_min  (0 for the best model)\n")
+        f.write("p_i       : exp(-Δ_i / 2)  — relative probability that model i minimises AIC\n")
+        f.write("\n")
+        f.write("Results (sorted by AIC, lower is better):\n")
+        f.write("-" * 70 + "\n")
+        f.write(f"{'Model':<14} {'k':>6} {'n_samples':>10} {'ln(L_cv)':>12} "
+                f"{'AIC':>12} {'Δ_AIC':>10} {'p_i':>8}\n")
+        f.write("-" * 70 + "\n")
+        for row in rows:
+            f.write(
+                f"{row['Model']:<14} "
+                f"{row['k_features']:>6} "
+                f"{row['n_samples']:>10} "
+                f"{row['log_likelihood_cv']:>12.4f} "
+                f"{row['AIC']:>12.4f} "
+                f"{row['delta_AIC']:>10.4f} "
+                f"{row['p_i']:>8.6f}\n"
+            )
+        f.write("\n")
+        f.write("Evidence categories (Burnham & Anderson 2004):\n")
+        f.write("-" * 70 + "\n")
+        for row in rows:
+            f.write(f"  {row['Model']}: {row['evidence_Burnham_Anderson_2004']}\n")
+        f.write("\n")
+        f.write("Interpretation guide:\n")
+        f.write("  Δ_AIC < 2      Substantial support — model highly likely to be a proper description\n")
+        f.write("  2 < Δ_AIC < 4  Strong support\n")
+        f.write("  4 < Δ_AIC < 7  Considerably less support\n")
+        f.write("  Δ_AIC > 10     Essentially no support\n")
+        f.write("\n")
+        f.write(f"Best model: {best_model}  (Δ_AIC = 0.0, p_i = 1.000000)\n")
+        f.write("\n")
+        f.write("Note: AIC penalises extra parameters (k), so a simpler representation\n")
+        f.write("is preferred unless a more complex one provides a substantially better\n")
+        f.write("cross-validated log-likelihood.  p_i gives the probability that model i\n")
+        f.write("would minimise AIC in a replicated experiment.\n")
+
+    print(f"[AIC] Report saved to: {report_path}")
+    return csv_path, report_path
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run unified classification on selected models without retraining.")
     parser.add_argument('--models', nargs='+', choices=['tmp', 'ae', 'legendre'], default=['tmp', 'ae', 'legendre'],
@@ -585,6 +686,10 @@ def parse_args() -> argparse.Namespace:
     # Cache location
     parser.add_argument('--cache-dir', type=str, default=DEFAULT_CACHE_DIR, help='Directory to store AE latents cache (defaults to project data/).')
 
+    # AIC comparison
+    parser.add_argument('--run-aic', action='store_true', default=False,
+                        help='Compute AIC-based model comparison (cross-validated log-likelihood, RF classifier).')
+
     # Combined plot output directory (optional)
     parser.add_argument('--combined-out-dir', type=str, default=None,
                         help='Directory to save the combined PCA variance plot. '
@@ -596,29 +701,30 @@ def main() -> None:
     args = parse_args()
 
 
-    # Store both PCA data for combined plots AND full results for CV comparison
+    # Store PCA data for combined plots, full results for CV comparison,
+    # and (X, y) pairs needed for AIC comparison.
     explained_by_model = {}
     results_by_model = {}
+    X_by_model = {}  # model_key -> (X, y) for AIC computation
 
     if 'tmp' in args.models:
         if not args.tmp_model_dir:
             raise ValueError("--tmp-model-dir is required when including 'tmp' in --models")
-        tmp_results = _run_tmp(
+        tmp_results, tmp_X, tmp_y = _run_tmp(
             data_dir=args.data_dir,
             tmp_model_dir=args.tmp_model_dir,
             seed=args.seed,
             primary_classifier=args.primary_classifier,
         )
-        # Store full results for CV comparison
         results_by_model['tmp'] = tmp_results
-        # Extract PCA data for combined plots
+        X_by_model['tmp'] = (tmp_X, tmp_y)
         if tmp_results and 'pca' in tmp_results:
             explained_by_model['TMP'] = tmp_results['pca'].get('explained_variance_ratio', None)
 
     if 'ae' in args.models:
         if not args.ae_model_path:
             raise ValueError("--ae-model-path is required when including 'ae' in --models")
-        ae_results = _run_ae(
+        ae_results, ae_X, ae_y = _run_ae(
             data_dir=args.data_dir,
             ae_model_path=args.ae_model_path,
             ae_out_dir=args.ae_out_dir,
@@ -626,22 +732,20 @@ def main() -> None:
             primary_classifier=args.primary_classifier,
             cache_dir=args.cache_dir,
         )
-        # Store full results for CV comparison
         results_by_model['ae'] = ae_results
-        # Extract PCA data for combined plots
+        X_by_model['ae'] = (ae_X, ae_y)
         if ae_results and 'pca' in ae_results:
             explained_by_model['AE'] = ae_results['pca'].get('explained_variance_ratio', None)
 
     if 'legendre' in args.models:
-        leg_results = _run_legendre(
+        leg_results, leg_X, leg_y = _run_legendre(
             data_dir=args.data_dir,
             legendre_out_dir=args.legendre_out_dir,
             seed=args.seed,
             primary_classifier=args.primary_classifier
         )
-        # Store full results for CV comparison
         results_by_model['legendre'] = leg_results
-        # Extract PCA data for combined plots
+        X_by_model['legendre'] = (leg_X, leg_y)
         if leg_results and 'pca' in leg_results:
             explained_by_model['Legendre'] = leg_results['pca'].get('explained_variance_ratio', None)
 
@@ -655,10 +759,8 @@ def main() -> None:
 
     # Create combined PCA plots
     if explained_by_model:
-        out_path_var = _plot_combined_pca_variance(explained_by_model, combined_dir)
-        print(f"[Combined] PCA cumulative variance plot saved to: {out_path_var}")
-        out_path_hist = _plot_combined_pca_histograms(explained_by_model, combined_dir)
-        print(f"[Combined] PCA variance explained histogram (stacked) saved to: {out_path_hist}")
+        out_path_var = _plot_combined_pca_figure(explained_by_model, combined_dir)
+
     else:
         print("[Combined] Skipped PCA plots: no PCA outputs available from selected models.")
 
@@ -668,6 +770,12 @@ def main() -> None:
                                            classifier_key=args.primary_classifier)
     else:
         print("[Combined] Skipped CV comparison: no results available from selected models.")
+
+    # AIC-based model comparison
+    if args.run_aic and X_by_model:
+        run_aic_comparison(X_by_model, combined_dir, seed=args.seed, cv_folds=5)
+    elif args.run_aic:
+        print("[AIC] Skipped: no model outputs available.")
 
 
 if __name__ == '__main__':

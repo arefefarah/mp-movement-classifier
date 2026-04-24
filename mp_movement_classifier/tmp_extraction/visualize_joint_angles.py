@@ -313,7 +313,7 @@ def set_camera_view(fig, view='right'):
             # these 3 lines are for removing the checkborads but maintain the scale of skeleton
             xaxis=dict(range=[-0.5, 0.5], visible=False),
             yaxis=dict(range=[-0.5, 0.5], visible=False),
-            # for 2 special movment we need larger space
+            # for 2 special movment(crawling and legged sitting) we need larger space
             # xaxis=dict(range=[-2, 2], visible=False),
             # yaxis=dict(range=[-2, 2], visible=False),
             zaxis=dict(range=[-0.5, 2], visible=False)
@@ -324,7 +324,7 @@ def set_camera_view(fig, view='right'):
 
 
 def create_animation(motion_file_stem="subject_42_motion_02", camera_view='front'):
-    animations_save_dir = os.path.join("./../../results/segmentation_analysis/segments_animation")
+    animations_save_dir = os.path.join("./../../results/segmentation_analysis/white_back_segments_animation")
     Path(animations_save_dir).mkdir(exist_ok=True)
 
     path = Path("../../data/bvh_files")
@@ -356,7 +356,7 @@ def create_animation(motion_file_stem="subject_42_motion_02", camera_view='front
     print("Generating GIF... this may take a moment.")
     frames = []
     # for j in range(viewer.max_frames):
-    for j in range(30):
+    for j in range(80):
         fig = viewer._create_figure(frame=j)
         fig = set_camera_view(fig, camera_view)
 
@@ -566,9 +566,10 @@ def main():
     id_to_motion_name = {id_val: motion_name for motion_name, id_val in motion_mapping.items()}
 
     motions_to_visualize = [
+        "subject_25_motion_14","subject_34_motion_12","subject_15_motion_07","subject_52_motion_01"
         # "subject_4_motion_05","subject_1_motion_03"  #crawling and cross leg sitting
         # "subject_23_motion_13", "subject_8_motion_09","subject_5_motion_02","subject_5_motion_06",
-        # "subject_1_motion_03","subject_5_motion_14","subject_5_motion_12","subject_18_motion_08",
+        # "subject_1_motion_03","subject_25_motion_14","subject_5_motion_12","subject_18_motion_08",
         # "subject_8_motion_07","subject_33_motion_18","subject_1_motion_01","subject_4_motion_05",
         # "subject_4_motion_17","subject_13_motion_11","subject_9_motion_10","subject_21_motion_00",
     ]

@@ -10,7 +10,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import seaborn as sns  # noqa: E402
 
-from sklearn.model_selection import cross_val_score, train_test_split
+from sklearn.model_selection import cross_val_score, train_test_split, StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
@@ -171,7 +171,9 @@ def analyze_feature_pca(
     plt.title('PCA of Features')
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig(out_dir / 'pca_scatter.png', dpi=150)
+    plot_path = out_dir / 'pca_scatter.png'
+    plt.savefig(plot_path, dpi=150)
+    plt.savefig(plot_path.with_suffix('.svg'), bbox_inches='tight', facecolor='white')
     plt.close()
 
     # Variance explained plots
@@ -194,7 +196,9 @@ def analyze_feature_pca(
     ax2.legend()
 
     plt.tight_layout()
+    plot_path = out_dir / 'pca_variance_explained.png'
     plt.savefig(out_dir / 'pca_variance_explained.png', dpi=150)
+    plt.savefig(plot_path.with_suffix('.svg'), bbox_inches='tight', facecolor='white')
     plt.close()
 
     # Optional: feature loadings heatmap
@@ -234,7 +238,8 @@ def visualize_with_tsne(X, y, out_dir):
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     out_path = Path(out_dir) / 'tsne_visualization.png'
-    plt.savefig(out_path, dpi=150)
+    plt.savefig(out_path, dpi=300, bbox_inches='tight', facecolor='white')
+    plt.savefig(out_path.with_suffix('.svg'), bbox_inches='tight', facecolor='white')
     plt.close()
     return tsne
 
@@ -284,4 +289,58 @@ def calculate_rdm(
         'class_means': class_means,
         'dist_matrix': dists,
         'figure_path': out_path,
+    }
+
+
+def compute_classification_aic(
+    X: np.ndarray,
+    y: np.ndarray,
+    seed: int = 42,
+    cv_folds: int = 5,
+) -> dict:
+    """
+    Compute AIC for a representation using cross-validated log-likelihood from Random Forest.
+
+    AIC = 2k - 2*ln(L_cv)
+      k       = number of input features (representation dimensionality)
+      ln(L_cv) = sum of log P(true_class | features) over all samples,
+                 estimated by k-fold CV (each sample appears in exactly one test fold)
+
+    Returns dict with keys: aic, k, log_likelihood, n_samples, cv_folds,
+                            fold_log_likelihoods
+    """
+    k = X.shape[1]
+    n_samples = X.shape[0]
+    eps = 1e-15  # floor to avoid log(0)
+
+    cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=seed)
+    fold_log_likelihoods = []
+    total_log_likelihood = 0.0
+
+    for fold_idx, (train_idx, test_idx) in enumerate(cv.split(X, y)):
+        clf_fold = RandomForestClassifier(n_estimators=200, random_state=seed)
+        clf_fold.fit(X[train_idx], y[train_idx])
+
+        proba = clf_fold.predict_proba(X[test_idx])       # shape (n_test, n_classes)
+        classes = clf_fold.classes_
+
+        # Map true labels -> column index in proba
+        class_to_idx = {c: i for i, c in enumerate(classes)}
+        col_indices = np.array([class_to_idx[label] for label in y[test_idx]])
+
+        # P(true class) for each test sample, clipped away from 0
+        true_probs = np.clip(proba[np.arange(len(test_idx)), col_indices], eps, 1.0)
+        fold_ll = float(np.sum(np.log(true_probs)))
+        fold_log_likelihoods.append(fold_ll)
+        total_log_likelihood += fold_ll
+
+    aic = 2.0 * k - 2.0 * total_log_likelihood
+
+    return {
+        'aic': aic,
+        'k': k,
+        'log_likelihood': total_log_likelihood,
+        'n_samples': n_samples,
+        'cv_folds': cv_folds,
+        'fold_log_likelihoods': fold_log_likelihoods,
     }
