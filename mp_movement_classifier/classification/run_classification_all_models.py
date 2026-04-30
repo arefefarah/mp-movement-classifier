@@ -184,7 +184,7 @@ def _run_tmp(data_dir: str, tmp_model_dir: str, seed: int,
     num_segments = len(processed_segments)
     num_signals = processed_segments[0].shape[0]
 
-    model_path = os.path.join(tmp_model_dir, 'mp_model_5_PC_tpoints_30')
+    model_path = os.path.join(tmp_model_dir, 'mp_model_5_PC_tpoints_35')
     # # If a different filename pattern is used, allow the user to provide the full path in tmp_model_dir
     # if not os.path.exists(model_path):
     #     # Try to find a single file starting with 'mp_model_' in the dir
@@ -324,7 +324,7 @@ def _run_legendre(data_dir: str, legendre_out_dir: str | None, seed: int,
         folder_path=data_dir, data_type='position', filtering=False
     )
 
-    max_degree = 1  # adjust if needed
+    max_degree = 0  # adjust if needed
     coefficients, errors = process_with_legendre_basis(processed_segments, max_degree)
 
     X, y = prepare_coefficient_data(coefficients, segment_motion_ids)

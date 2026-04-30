@@ -48,6 +48,13 @@ SIGNAL_NAMES = [
 ]
 
 
+def _save_fig(out_path):
+    """Save the current matplotlib figure as both PNG and SVG."""
+    out_path = Path(out_path)
+    plt.savefig(out_path, dpi=300, bbox_inches='tight')
+    plt.savefig(out_path.with_suffix('.svg'), bbox_inches='tight', facecolor='white')
+
+
 def create_feature_names(num_signals: int, num_MPs: int) -> List[str]:
     """
     Create descriptive feature names using signal names and MP indices
@@ -89,7 +96,7 @@ class L1FeatureSelector:
         """
         if C_values is None:
             # Logarithmically spaced C values from very strong to weak regularization
-            self.C_values = [0.0001, 0.001, 0.01, 0.1, 0.5, 1.0, 5.0, 10.0, 50.0, 100.0]
+            self.C_values = [0.0001, 0.001, 0.01,0.05, 0.1,0.3,0.5,0.75, 1.0,2.5, 5.0, 10.0, 50.0, 100.0]
         else:
             self.C_values = sorted(C_values)
 
@@ -274,88 +281,90 @@ class L1FeatureSelector:
             test_accs.append(r['test_accuracy'])
             num_features.append(r['num_features_selected'])
             sparsities.append(r['sparsity'])
-
-        # ============ Plot 1: Accuracy vs C ============
-        fig, ax = plt.subplots(figsize=(10, 6))
-
-        ax.semilogx(C_vals, train_accs, 'o-', label='Train Accuracy',
-                    linewidth=2, markersize=8, color='blue')
-        ax.semilogx(C_vals, test_accs, 's-', label='Test Accuracy',
-                    linewidth=2, markersize=8, color='red')
-
-        # Mark best C
-        best_idx = C_vals.index(self.best_C)
-        ax.axvline(self.best_C, color='green', linestyle='--',
-                   label=f'Best C = {self.best_C}', linewidth=2)
-        ax.scatter(self.best_C, test_accs[best_idx],
-                   s=200, color='green', marker='*', zorder=5,
-                   edgecolors='black', linewidths=2)
-
-        ax.set_xlabel('C (Regularization Parameter)', fontsize=12, fontweight='bold')
-        ax.set_ylabel('Accuracy', fontsize=12, fontweight='bold')
-        ax.set_title('Model Accuracy vs Regularization Strength',
-                     fontsize=14, fontweight='bold')
-        ax.legend(fontsize=10)
-        ax.grid(True, alpha=0.3)
-        ax.set_ylim([0, 1.05])
-
-        plt.tight_layout()
-        plt.savefig(out_dir / 'l1_accuracy_vs_C.png', dpi=300, bbox_inches='tight')
-        plt.close()
-        print(f"  ✓ Saved: {out_dir / 'l1_accuracy_vs_C.png'}")
-
-        # ============ Plot 2: Number of Features vs C ============
-        fig, ax = plt.subplots(figsize=(10, 6))
-
-        ax.semilogx(C_vals, num_features, 'o-', linewidth=2,
-                    markersize=8, color='purple')
-        ax.axvline(self.best_C, color='green', linestyle='--',
-                   label=f'Best C = {self.best_C}', linewidth=2)
-
-        ax.set_xlabel('C (Regularization Parameter)', fontsize=12, fontweight='bold')
-        ax.set_ylabel('Number of Selected Features', fontsize=12, fontweight='bold')
-        ax.set_title('Feature Selection vs Regularization Strength',
-                     fontsize=14, fontweight='bold')
-        ax.legend(fontsize=10)
-        ax.grid(True, alpha=0.3)
-
-        plt.tight_layout()
-        plt.savefig(out_dir / 'l1_num_features_vs_C.png', dpi=300, bbox_inches='tight')
-        plt.close()
-        print(f"  ✓ Saved: {out_dir / 'l1_num_features_vs_C.png'}")
+        #
+        # # ============ Plot 1: Accuracy vs C ============
+        # fig, ax = plt.subplots(figsize=(10, 6))
+        #
+        # ax.semilogx(C_vals, train_accs, 'o-', label='Train Accuracy',
+        #             linewidth=2, markersize=8, color='blue')
+        # ax.semilogx(C_vals, test_accs, 's-', label='Test Accuracy',
+        #             linewidth=2, markersize=8, color='red')
+        #
+        # # Mark best C
+        # best_idx = C_vals.index(self.best_C)
+        # ax.axvline(self.best_C, color='green', linestyle='--',
+        #            label=f'Best C = {self.best_C}', linewidth=2)
+        # ax.scatter(self.best_C, test_accs[best_idx],
+        #            s=200, color='green', marker='*', zorder=5,
+        #            edgecolors='black', linewidths=2)
+        #
+        # ax.set_xlabel('C (Regularization Parameter)', fontsize=12, fontweight='bold')
+        # ax.set_ylabel('Accuracy', fontsize=12, fontweight='bold')
+        # ax.set_title('Model Accuracy vs Regularization Strength',
+        #              fontsize=14, fontweight='bold')
+        # ax.legend(fontsize=10)
+        # ax.grid(True, alpha=0.3)
+        # ax.set_ylim([0, 1.05])
+        #
+        # plt.tight_layout()
+        # plt.savefig(out_dir / 'l1_accuracy_vs_C.png', dpi=300, bbox_inches='tight')
+        # plt.close()
+        # print(f"  ✓ Saved: {out_dir / 'l1_accuracy_vs_C.png'}")
+        #
+        # # ============ Plot 2: Number of Features vs C ============
+        # fig, ax = plt.subplots(figsize=(10, 6))
+        #
+        # ax.semilogx(C_vals, num_features, 'o-', linewidth=2,
+        #             markersize=8, color='purple')
+        # ax.axvline(self.best_C, color='green', linestyle='--',
+        #            label=f'Best C = {self.best_C}', linewidth=2)
+        #
+        # ax.set_xlabel('C (Regularization Parameter)', fontsize=12, fontweight='bold')
+        # ax.set_ylabel('Number of Selected Features', fontsize=12, fontweight='bold')
+        # ax.set_title('Feature Selection vs Regularization Strength',
+        #              fontsize=14, fontweight='bold')
+        # ax.legend(fontsize=10)
+        # ax.grid(True, alpha=0.3)
+        #
+        # plt.tight_layout()
+        # plt.savefig(out_dir / 'l1_num_features_vs_C.png', dpi=300, bbox_inches='tight')
+        # plt.close()
+        # print(f"  ✓ Saved: {out_dir / 'l1_num_features_vs_C.png'}")
 
         # ============ Plot 3: Combined View ============
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(5.0, 4.5), sharex=True)
 
         # Top: Accuracy
         ax1.semilogx(C_vals, train_accs, 'o-', label='Train',
-                     linewidth=2, markersize=6, color='blue')
+                     linewidth=1.5, markersize=4, color='blue')
         ax1.semilogx(C_vals, test_accs, 's-', label='Test',
-                     linewidth=2, markersize=6, color='red')
-        ax1.axvline(self.best_C, color='green', linestyle='--', alpha=0.7)
-        ax1.set_ylabel('Accuracy', fontsize=11, fontweight='bold')
+                     linewidth=1.5, markersize=4, color='red')
+        ax1.axvline(self.best_C, color='green', linestyle='--', alpha=0.7, linewidth=1.2)
+        ax1.set_ylabel('Accuracy', fontsize=9, fontweight='bold')
         ax1.set_title('Accuracy and Feature Selection vs Regularization',
-                      fontsize=13, fontweight='bold')
-        ax1.legend(fontsize=9)
+                      fontsize=10, fontweight='bold')
+        ax1.legend(fontsize=8)
+        ax1.tick_params(axis='both', labelsize=8)
         ax1.grid(True, alpha=0.3)
         ax1.set_ylim([0, 1.05])
 
         # Bottom: Number of features
-        ax2.semilogx(C_vals, num_features, 'o-', linewidth=2,
-                     markersize=6, color='purple')
+        ax2.semilogx(C_vals, num_features, 'o-', linewidth=1.5,
+                     markersize=4, color='purple')
         ax2.axvline(self.best_C, color='green', linestyle='--',
-                    label=f'Best C = {self.best_C}', alpha=0.7)
-        ax2.set_xlabel('C (Regularization Parameter)', fontsize=11, fontweight='bold')
-        ax2.set_ylabel('# Features Selected', fontsize=11, fontweight='bold')
-        ax2.legend(fontsize=9)
+                    label=f'Best C = {self.best_C}', alpha=0.7, linewidth=1.2)
+        ax2.set_xlabel('C (Regularization Parameter)', fontsize=9, fontweight='bold')
+        ax2.set_ylabel('# Features Selected', fontsize=9, fontweight='bold')
+        ax2.legend(fontsize=8)
+        ax2.tick_params(axis='both', labelsize=8)
         ax2.grid(True, alpha=0.3)
 
         plt.tight_layout()
-        plt.savefig(out_dir / 'l1_combined_analysis.png', dpi=300, bbox_inches='tight')
+        _save_fig(out_dir / 'l1_combined_analysis.png')
         plt.close()
         print(f"  ✓ Saved: {out_dir / 'l1_combined_analysis.png'}")
 
-        # ============ Plot 4: Feature Selection Heatmap ============
+        # # ============ Plot 4: Feature Selection Heatmap ============
         n_features = len(self.results[self.C_values[0]]['feature_importance'])
         n_C = len(self.C_values)
 
@@ -377,59 +386,59 @@ class L1FeatureSelector:
 
         if n_plot > 0:
             plot_indices = selected_at_least_once[:n_plot]
-
-            fig, ax = plt.subplots(figsize=(max(12, n_plot * 0.15), 8))
-
-            # Transpose for better visualization (features on y-axis)
-            heatmap_data = selection_matrix[:, plot_indices].T
-
-            im = ax.imshow(heatmap_data, aspect='auto', cmap='YlOrRd',
-                          interpolation='nearest')
-
-            # Set ticks
-            ax.set_yticks(np.arange(n_plot))
-            ax.set_xticks(np.arange(n_C))
-
-            # Labels
-            if feature_names:
-                y_labels = [feature_names[i] for i in plot_indices]
-            else:
-                y_labels = [f'F{i}' for i in plot_indices]
-
-            ax.set_yticklabels(y_labels, fontsize=7)
-            ax.set_xticklabels([f'{c:.0e}' for c in self.C_values],
-                              rotation=45, ha='right', fontsize=9)
-
-            # Mark best C
-            best_C_idx = self.C_values.index(self.best_C)
-            ax.axvline(best_C_idx, color='green', linewidth=3,
-                      linestyle='--', label='Best C')
-
-            ax.set_xlabel('C Value', fontsize=12, fontweight='bold')
-            ax.set_ylabel('Feature Index', fontsize=12, fontweight='bold')
-            ax.set_title(f'Feature Selection Pattern Across C Values\n'
-                        f'(Top {n_plot} most frequently selected features)',
-                        fontsize=13, fontweight='bold')
-
-            # Colorbar
-            cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-            cbar.set_label('Selected (1) / Not Selected (0)',
-                          rotation=270, labelpad=20, fontsize=10)
-
-            plt.tight_layout()
-            plt.savefig(out_dir / 'l1_feature_selection_heatmap.png',
-                       dpi=300, bbox_inches='tight')
-            plt.close()
-            print(f"  ✓ Saved: {out_dir / 'l1_feature_selection_heatmap.png'}")
+        #
+        #     fig, ax = plt.subplots(figsize=(max(12, n_plot * 0.15), 8))
+        #
+        #     # Transpose for better visualization (features on y-axis)
+        #     heatmap_data = selection_matrix[:, plot_indices].T
+        #
+        #     im = ax.imshow(heatmap_data, aspect='auto', cmap='YlOrRd',
+        #                   interpolation='nearest')
+        #
+        #     # Set ticks
+        #     ax.set_yticks(np.arange(n_plot))
+        #     ax.set_xticks(np.arange(n_C))
+        #
+        #     # Labels
+        #     if feature_names:
+        #         y_labels = [feature_names[i] for i in plot_indices]
+        #     else:
+        #         y_labels = [f'F{i}' for i in plot_indices]
+        #
+        #     ax.set_yticklabels(y_labels, fontsize=7)
+        #     ax.set_xticklabels([f'{c:.0e}' for c in self.C_values],
+        #                       rotation=45, ha='right', fontsize=9)
+        #
+        #     # Mark best C
+        #     best_C_idx = self.C_values.index(self.best_C)
+        #     ax.axvline(best_C_idx, color='green', linewidth=3,
+        #               linestyle='--', label='Best C')
+        #
+        #     ax.set_xlabel('C Value', fontsize=12, fontweight='bold')
+        #     ax.set_ylabel('Feature Index', fontsize=12, fontweight='bold')
+        #     ax.set_title(f'Feature Selection Pattern Across C Values\n'
+        #                 f'(Top {n_plot} most frequently selected features)',
+        #                 fontsize=13, fontweight='bold')
+        #
+        #     # Colorbar
+        #     cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        #     cbar.set_label('Selected (1) / Not Selected (0)',
+        #                   rotation=270, labelpad=20, fontsize=10)
+        #
+        #     plt.tight_layout()
+        #     plt.savefig(out_dir / 'l1_feature_selection_heatmap.png',
+        #                dpi=300, bbox_inches='tight')
+        #     plt.close()
+        #     print(f"  ✓ Saved: {out_dir / 'l1_feature_selection_heatmap.png'}")
 
         # ============ Plot 5: Feature Stability Analysis ============
-        fig, ax = plt.subplots(figsize=(12, 6))
-
         # Sort by frequency
         sorted_freq = selection_freq[sorted_indices]
-        n_plot_stability = min(50, len(selected_at_least_once))
+        n_plot_stability = min(20, len(selected_at_least_once))
 
         if n_plot_stability > 0:
+            fig, ax = plt.subplots(figsize=(4.5, 4.0))
+
             plot_freq = sorted_freq[:n_plot_stability]
             plot_idx = sorted_indices[:n_plot_stability]
 
@@ -443,24 +452,24 @@ class L1FeatureSelector:
 
             ax.set_yticks(np.arange(n_plot_stability))
             ax.set_yticklabels(labels, fontsize=8)
-            ax.set_xlabel('Selection Frequency', fontsize=12, fontweight='bold')
-            ax.set_ylabel('Feature', fontsize=12, fontweight='bold')
-            ax.set_title(f'Top {n_plot_stability} Most Stable Features\n'
-                        '(Selected across different C values)',
-                        fontsize=13, fontweight='bold')
+            ax.set_xlabel('Selection Frequency', fontsize=9, fontweight='bold')
+            ax.set_ylabel('Feature', fontsize=9, fontweight='bold')
+            ax.set_title(f'Top {n_plot_stability} Most Stable Features',
+                         fontsize=10, fontweight='bold')
             ax.set_xlim([0, 1])
+            ax.tick_params(axis='x', labelsize=8)
             ax.grid(True, alpha=0.3, axis='x')
 
             # Add colorbar
             sm = plt.cm.ScalarMappable(cmap='RdYlGn',
                                        norm=plt.Normalize(vmin=0, vmax=1))
             sm.set_array([])
-            cbar = plt.colorbar(sm, ax=ax, pad=0.01)
-            cbar.set_label('Frequency', rotation=270, labelpad=15)
+            cbar = plt.colorbar(sm, ax=ax, pad=0.02, fraction=0.046)
+            cbar.set_label('Frequency', rotation=270, labelpad=12, fontsize=8)
+            cbar.ax.tick_params(labelsize=7)
 
             plt.tight_layout()
-            plt.savefig(out_dir / 'l1_feature_stability.png',
-                       dpi=300, bbox_inches='tight')
+            _save_fig(out_dir / 'l1_feature_stability.png')
             plt.close()
             print(f"  ✓ Saved: {out_dir / 'l1_feature_stability.png'}")
 
@@ -471,9 +480,9 @@ class L1FeatureSelector:
 
         if len(non_zero_idx) > 0:
             sorted_idx = non_zero_idx[np.argsort(importance[non_zero_idx])[::-1]]
-            n_plot_best = min(40, len(sorted_idx))  # Increased to 40 for better visibility
+            n_plot_best = min(20, len(sorted_idx))
 
-            fig, ax = plt.subplots(figsize=(12, max(8, n_plot_best * 0.25)))
+            fig, ax = plt.subplots(figsize=(4.5, max(2.5, n_plot_best * 0.18)))
 
             top_idx = sorted_idx[:n_plot_best]
             top_importance = importance[top_idx]
@@ -487,22 +496,15 @@ class L1FeatureSelector:
             bars = ax.barh(np.arange(n_plot_best), top_importance, color=colors)
 
             ax.set_yticks(np.arange(n_plot_best))
-            ax.set_yticklabels(labels, fontsize=9)
-            ax.set_xlabel('Feature Importance (Mean |Coefficient|)',
-                         fontsize=12, fontweight='bold')
-            ax.set_ylabel('Feature', fontsize=12, fontweight='bold')
-            ax.set_title(f'Top {n_plot_best} Features for Best Model (C={self.best_C})',
-                        fontsize=13, fontweight='bold')
+            ax.set_yticklabels(labels, fontsize=8)
+            ax.set_xlabel('Mean |Coefficient|', fontsize=9, fontweight='bold')
+            ax.set_title(f'Top {n_plot_best} Features (C={self.best_C})',
+                         fontsize=10, fontweight='bold')
+            ax.tick_params(axis='x', labelsize=8)
             ax.grid(True, alpha=0.3, axis='x')
 
-            # Add values on bars
-            for i, (bar, val) in enumerate(zip(bars, top_importance)):
-                ax.text(val, i, f' {val:.4f}',
-                       va='center', fontsize=7, fontweight='bold')
-
             plt.tight_layout()
-            plt.savefig(out_dir / 'l1_best_model_features.png',
-                       dpi=300, bbox_inches='tight')
+            _save_fig(out_dir / 'l1_best_model_features.png')
             plt.close()
             print(f"  ✓ Saved: {out_dir / 'l1_best_model_features.png'}")
 
@@ -513,27 +515,50 @@ class L1FeatureSelector:
         out_dir = Path(out_dir)
 
         y_pred = self.results[self.best_C]['y_test_pred']
+
+        # Row-normalized confusion matrix (rows sum to 1) — same as classification_pipeline
         cm = confusion_matrix(self.y_test, y_pred)
+        with np.errstate(all='ignore'):
+            row_sums = cm.sum(axis=1, keepdims=True)
+            cm_norm = np.divide(cm, row_sums,
+                                out=np.zeros_like(cm, dtype=float),
+                                where=row_sums != 0)
 
-        fig, ax = plt.subplots(figsize=(10, 8))
+        # Central font-size config (matches _plot_confusion_matrix_percent)
+        FONT = dict(annot=14, tick=13, label=14, title=16)
 
-        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-                   cbar=True, ax=ax, square=True)
+        fig, ax = plt.subplots(figsize=(9, 7))
+        annot = np.where(cm_norm == 0, "", cm_norm.round(2).astype(str))
 
-        ax.set_xlabel('Predicted Label', fontsize=12, fontweight='bold')
-        ax.set_ylabel('True Label', fontsize=12, fontweight='bold')
-        ax.set_title(f'Confusion Matrix (Best Model: C={self.best_C})',
-                    fontsize=14, fontweight='bold')
+        sns.heatmap(
+            cm_norm,
+            annot=annot,
+            fmt="",
+            cmap="Blues",
+            cbar=True,
+            vmin=0.0,
+            vmax=1.0,
+            ax=ax,
+            annot_kws={"size": FONT["annot"]},
+        )
 
         if class_names:
-            ax.set_xticklabels(class_names, rotation=45, ha='right')
-            ax.set_yticklabels(class_names, rotation=0)
+            ax.set_xticklabels(class_names, rotation=45, ha='right', fontsize=FONT["tick"])
+            ax.set_yticklabels(class_names, rotation=0, fontsize=FONT["tick"])
+        else:
+            ax.tick_params(axis='both', labelsize=FONT["tick"])
 
-        plt.tight_layout()
-        plt.savefig(out_dir / 'l1_confusion_matrix.png',
-                   dpi=300, bbox_inches='tight')
-        plt.close()
-        print(f"  ✓ Saved: {out_dir / 'l1_confusion_matrix.png'}")
+        ax.set_title("Confusion Matrix", fontsize=FONT["title"])
+        ax.set_xlabel("Predicted", fontsize=FONT["label"])
+        ax.set_ylabel("True", fontsize=FONT["label"])
+        ax.collections[0].colorbar.ax.tick_params(labelsize=FONT["tick"])
+
+        fig.tight_layout()
+        out_path = out_dir / 'l1_confusion_matrix.png'
+        fig.savefig(out_path, dpi=150)
+        fig.savefig(out_path.with_suffix('.svg'), bbox_inches='tight', facecolor='white')
+        plt.close(fig)
+        print(f"  ✓ Saved: {out_path}")
 
     def save_results(self, out_dir: Path, feature_names: List[str] = None):
         """
@@ -570,23 +595,13 @@ class L1FeatureSelector:
         print(f"  ✓ Saved: {out_dir / 'l1_best_model.pkl'}")
 
 def main():
-    """
-    Main execution function
-    """
-    print("\n" + "="*70)
-    print("L1 REGULARIZATION FEATURE SELECTION FOR MOVEMENT CLASSIFICATION")
-    print("="*70 + "\n")
 
     # ========== Configuration ==========
     num_MPs = 5
     cutoff_freq = 3.0
-    tpoints = 30
+    tpoints = 35
 
-    model_dir = os.path.join(
-        "./../../results/tmp_configs",
-        f"new_seg_pymotion_position_mp_model_{num_MPs}_phase_two"
-    )
-    model_dir = os.path.join("./../../results/tmp_configs",f"new_seg_exponential_mp_model_{num_MPs}_tpoints_{tpoints}_phase_two")
+    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_mp_model_{num_MPs}_phase_three")
     model_file = os.path.join(
         model_dir,
         f"mp_model_{num_MPs}_PC_tpoints_{tpoints}"
@@ -594,7 +609,7 @@ def main():
 
     out_dir = os.path.join(model_dir, "l1_feature_selection")
 
-    folder_path = "../../data/pymotion_exponential_csv_files"
+    folder_path = "../../data/pymotion_position_csv_files"
 
     # ========== Load Data ==========
     print("Loading and processing data...")
@@ -660,15 +675,6 @@ def main():
     print("\nSaving results...")
     selector.save_results(Path(out_dir), feature_names)
 
-    print("\n" + "="*70)
-    print("ANALYSIS COMPLETE!")
-    print("="*70)
-    print(f"\nResults saved to: {out_dir}")
-    print(f"\nBest Model Summary:")
-    print(f"  - C = {selector.best_C}")
-    print(f"  - Test Accuracy: {selector.results[selector.best_C]['test_accuracy']:.4f}")
-    print(f"  - Features Selected: {selector.results[selector.best_C]['num_features_selected']} / {X.shape[1]}")
-    print(f"  - Feature Reduction: {selector.results[selector.best_C]['sparsity']:.1%}")
 
     # Print top 10 selected features for best model
     print(f"\nTop 10 Selected Features (Best Model):")

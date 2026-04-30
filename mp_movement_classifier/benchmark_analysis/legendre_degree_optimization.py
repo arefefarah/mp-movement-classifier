@@ -350,7 +350,7 @@ def main():
     # Configuration
     num_MPs = 5
     model_dir = os.path.join("./../../results/tmp_configs",
-                             f"new_seg_pymotion_position_mp_model_{num_MPs}_phase_two")
+                             f"new_seg_mp_model_{num_MPs}_phase_three")
     # model_dir = os.path.join("./../../results/tmp_configs",
     #                          f"mean_subtracted_mp_model_{num_MPs}_tpoints_30_phase_two")
     out_dir = os.path.join(model_dir, "legendre_optimization")

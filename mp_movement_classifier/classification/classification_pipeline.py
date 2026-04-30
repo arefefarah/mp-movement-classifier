@@ -17,7 +17,7 @@ from sklearn.metrics import classification_report, confusion_matrix, accuracy_sc
 from mp_movement_classifier.classification.utils import (
     analyze_feature_pca,
     visualize_with_tsne,
-    calculate_rdm,
+    calculate_rdm,save_motion_legend,
     plot_and_save_feature_importance,
     save_classification_report,
 )
@@ -304,6 +304,12 @@ def run_classification_pipeline(
     # 1) Optional unsupervised analyses (PCA, t-SNE, RDM) for interpretability
     pca_info = analyze_feature_pca(X=X, y=y, out_dir=out_dir, feature_names=feature_names)
     tsne_model = visualize_with_tsne(X=X, y=y, out_dir=out_dir)
+    save_motion_legend(
+        out_path=Path(out_dir) / 'motion_legend.png',
+        motion_ids=np.unique(y).tolist(),
+        ncol=2,  # 2 columns ≈ 9 rows for 18 classes
+    )
+
     rdm_info = calculate_rdm(X=X, y=y, out_dir=out_dir)
 
     # 2) Train/test split and scaling

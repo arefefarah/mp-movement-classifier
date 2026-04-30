@@ -707,7 +707,7 @@ def main():
     num_signals = processed_segments[0].shape[0]
     print(f"Number of signals: {num_signals}")
 
-    max_degree = 1  # for polynomial degrees as basis function , For 10 degrees (0 to 9)
+    max_degree = 0  # for polynomial degrees as basis function , For 10 degrees (0 to 9)
     coefficients, errors = process_with_legendre_basis(processed_segments, max_degree)
     coefficients_array = np.stack(coefficients, axis=0)
     # coefficients_array shape (num_segments,n_joints, max_degree+1)

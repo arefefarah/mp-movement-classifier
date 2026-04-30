@@ -17,9 +17,29 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.svm import LinearSVC
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
+import matplotlib.cm as cm
 from sklearn.metrics import classification_report, confusion_matrix
 
-
+MOTION_NAMES = {
+        0: 'hand clapping',
+        1: 'jogging',
+        2: 'walking',
+        3: 'cross-legged sitting',
+        4: 'vertical jumping',
+        5: 'crawling',
+        6: 'hand waving',
+        7: 'running in spot',
+        8: 'checking watch',
+        9: 'kicking',
+        10: 'taking photo',
+        11: 'cross arms',
+        12: 'jumping jacks',
+        13: 'scratching head',
+        14: 'throw & catch',
+        17: 'sitting down',
+        18: 'sideways',
+        20: 'stretching',
+    }
 # --- Extracted helpers (single source of truth) ---
 
 def prepare_weights_for_classification(model, num_segments, num_signals, num_MPs=20):
@@ -162,19 +182,48 @@ def analyze_feature_pca(
     pca = PCA(n_components=n_components)
     X_pca = pca.fit_transform(X)
 
-    # Scatter PC1 vs PC2
-    plt.figure(figsize=(10, 8))
-    scatter = plt.scatter(X_pca[:, 0], X_pca[:, 1], c=y, cmap='hsv', alpha=0.8)
-    plt.colorbar(scatter, label='Motion Type')
-    plt.xlabel(f'PC1 (Explained Variance: {pca.explained_variance_ratio_[0]:.2f})')
-    plt.ylabel(f'PC2 (Explained Variance: {pca.explained_variance_ratio_[1]:.2f})')
-    plt.title('PCA of Features')
-    plt.grid(True, alpha=0.3)
+    # --- categorical legend setup (move imports/dict to top of file if reused) ---
+
+    classes = np.unique(y)
+    n_classes = len(classes)
+    cmap = cm.get_cmap('hsv', n_classes)
+    colors = [cmap(i) for i in range(n_classes)]
+    class_names = {c: MOTION_NAMES.get(int(c), str(c)) for c in classes}
+
+    # --- scatter PC1 vs PC2 ---
+    fig, ax = plt.subplots(figsize=(3.8, 3.4))
+    for i, c in enumerate(classes):
+        mask = (y == c)
+        ax.scatter(X_pca[mask, 0], X_pca[mask, 1],
+                   s=14, alpha=0.8, color=colors[i],
+                   label=class_names[c], linewidths=0)
+
+    ax.set_xlabel(f'PC1 ({pca.explained_variance_ratio_[0]:.2f})', fontsize=11)
+    ax.set_ylabel(f'PC2 ({pca.explained_variance_ratio_[1]:.2f})', fontsize=11)
+    ax.set_title('PCA of Features', fontsize=13, fontweight='bold')
+    ax.tick_params(axis='both', labelsize=10)
+    ax.grid(True, alpha=0.3)
     plt.tight_layout()
     plot_path = out_dir / 'pca_scatter.png'
-    plt.savefig(plot_path, dpi=150)
+    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
     plt.savefig(plot_path.with_suffix('.svg'), bbox_inches='tight', facecolor='white')
     plt.close()
+    # # Scatter PC1 vs PC2
+    # fig, ax = plt.subplots(figsize=(3.8, 3.4))
+    # scatter = ax.scatter(X_pca[:, 0], X_pca[:, 1], c=y, cmap='hsv', alpha=0.8, s=14)
+    # cbar = fig.colorbar(scatter, ax=ax, fraction=0.046, pad=0.04)
+    # cbar.set_label('Motion Type', fontsize=10)
+    # cbar.ax.tick_params(labelsize=9)
+    # ax.set_xlabel(f'PC1 ({pca.explained_variance_ratio_[0]:.2f})', fontsize=11)
+    # ax.set_ylabel(f'PC2 ({pca.explained_variance_ratio_[1]:.2f})', fontsize=11)
+    # ax.set_title('PCA of Features', fontsize=13, fontweight='bold')
+    # ax.tick_params(axis='both', labelsize=10)
+    # ax.grid(True, alpha=0.3)
+    # plt.tight_layout()
+    # plot_path = out_dir / 'pca_scatter.png'
+    # plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+    # plt.savefig(plot_path.with_suffix('.svg'), bbox_inches='tight', facecolor='white')
+    # plt.close()
 
     # Variance explained plots
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
@@ -229,19 +278,82 @@ def visualize_with_tsne(X, y, out_dir):
     tsne = TSNE(n_components=2, random_state=42, perplexity=min(30, len(X) - 1))
     X_tsne = tsne.fit_transform(X)
 
-    plt.figure(figsize=(10, 8))
-    scatter = plt.scatter(X_tsne[:, 0], X_tsne[:, 1], c=y, cmap='hsv', alpha=0.8)
-    plt.colorbar(scatter, label='Motion Type')
-    plt.xlabel('t-SNE Dimension 1')
-    plt.ylabel('t-SNE Dimension 2')
-    plt.title('t-SNE of Features')
-    plt.grid(True, alpha=0.3)
+    # fig, ax = plt.subplots(figsize=(3.8, 3.4))
+    # scatter = ax.scatter(X_tsne[:, 0], X_tsne[:, 1], c=y, cmap='hsv', alpha=0.8, s=14)
+    # cbar = fig.colorbar(scatter, ax=ax, fraction=0.046, pad=0.04)
+    # cbar.set_label('Motion Type', fontsize=10)
+    # cbar.ax.tick_params(labelsize=9)
+    # ax.set_xlabel('t-SNE 1', fontsize=11)
+    # ax.set_ylabel('t-SNE 2', fontsize=11)
+    # ax.set_title('t-SNE of Features', fontsize=13, fontweight='bold')
+    # ax.tick_params(axis='both', labelsize=10)
+    # ax.grid(True, alpha=0.3)
+    # plt.tight_layout()
+    # out_path = Path(out_dir) / 'tsne_visualization.png'
+    # plt.savefig(out_path, dpi=300, bbox_inches='tight', facecolor='white')
+    # plt.savefig(out_path.with_suffix('.svg'), bbox_inches='tight', facecolor='white')
+    # plt.close()
+    # return tsne
+
+    classes = np.unique(y)
+    n_classes = len(classes)
+    cmap = cm.get_cmap('hsv', n_classes)
+    colors = [cmap(i) for i in range(n_classes)]
+    class_names = {c: MOTION_NAMES.get(int(c), str(c)) for c in classes}
+
+    # --- plot ---
+    fig, ax = plt.subplots(figsize=(3.8, 3.4))
+    for i, c in enumerate(classes):
+        mask = (y == c)
+        ax.scatter(X_tsne[mask, 0], X_tsne[mask, 1],
+                   s=14, alpha=0.8, color=colors[i],
+                   label=class_names[c], linewidths=0)
+
+    ax.set_xlabel('t-SNE 1', fontsize=11)
+    ax.set_ylabel('t-SNE 2', fontsize=11)
+    ax.set_title('t-SNE of Features', fontsize=13, fontweight='bold')
+    ax.tick_params(axis='both', labelsize=10)
+    ax.grid(True, alpha=0.3)
     plt.tight_layout()
     out_path = Path(out_dir) / 'tsne_visualization.png'
     plt.savefig(out_path, dpi=300, bbox_inches='tight', facecolor='white')
     plt.savefig(out_path.with_suffix('.svg'), bbox_inches='tight', facecolor='white')
     plt.close()
     return tsne
+
+from matplotlib.lines import Line2D
+
+def save_motion_legend(
+    out_path: Path,
+    motion_ids: list,
+    ncol: int = 2,
+    marker_size: int = 9,
+    fontsize: int = 10,
+):
+    """Render a standalone legend mapping motion IDs to color swatches + names.
+    """
+    cmap_name = 'hsv'
+    motion_names = MOTION_NAMES
+    cmap = cm.get_cmap(cmap_name, len(motion_ids))
+    handles = [
+        Line2D([0], [0], marker='o', linestyle='',
+               markerfacecolor=cmap(i), markeredgecolor='none',
+               markersize=marker_size,
+               label=motion_names.get(int(c), str(c)))
+        for i, c in enumerate(motion_ids)
+    ]
+
+    # Size the legend canvas to its contents — no axes, no extras.
+    n_rows = -(-len(motion_ids) // ncol)  # ceil
+    fig = plt.figure(figsize=(2.6 * ncol, 0.28 * n_rows + 0.2))
+    fig.legend(
+        handles=handles, loc='center', frameon=False,
+        ncol=ncol, fontsize=fontsize,
+        handletextpad=0.5, columnspacing=1.2, labelspacing=0.4,
+    )
+    plt.savefig(out_path, dpi=300, bbox_inches='tight', facecolor='white')
+    plt.savefig(Path(out_path).with_suffix('.svg'), bbox_inches='tight', facecolor='white')
+    plt.close()
 
 
 def calculate_rdm(
