@@ -13,15 +13,6 @@ This script:
 3. Loads TMP weights for comparison
 4. Generates comprehensive comparison figures
 
-Usage:
-    from posture_removal_experiment import run_posture_removal_experiment
-
-    run_posture_removal_experiment(
-        processed_segments=processed_segments,
-        segment_motion_ids=segment_motion_ids,
-        out_dir='./results/posture_experiment',
-        tmp_weights=tmp_weights_X,  # or None
-    )
 """
 
 import os
@@ -29,6 +20,7 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestClassifier
 import seaborn as sns
 from pathlib import Path
 from scipy import special
@@ -39,6 +31,20 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import LinearSVC
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+
+from mp_movement_classifier.benchmark_analysis.legendre_extraction import process_with_legendre_basis, prepare_coefficient_data
+
+from pathlib import Path
+
+from mp_movement_classifier.classification.utils import prepare_weights_for_classification
+from mp_movement_classifier.utils.utils import (
+    load_model_with_full_state,
+    process_motion_data,
+    process_bvh_data,
+    read_bvh_files,
+    save_model_with_full_state,
+
+)
 
 
 # =========================================================================
@@ -99,19 +105,16 @@ def classify_and_evaluate(X, y, method_name='', n_cv_folds=5, random_state=42):
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.25, random_state=random_state, stratify=y
     )
-    scaler = StandardScaler()
-    X_train_s = scaler.fit_transform(X_train)
-    X_test_s = scaler.transform(X_test)
 
-    clf = LinearSVC(C=1.0, dual=True, max_iter=5000)
-    clf.fit(X_train_s, y_train)
+    clf = RandomForestClassifier(n_estimators=200, random_state=42)
+    clf.fit(X_train, y_train)
 
-    train_acc = clf.score(X_train_s, y_train)
-    test_acc = clf.score(X_test_s, y_test)
+    train_acc = clf.score(X_train, y_train)
+    test_acc = clf.score(X_test, y_test)
 
     cv_scores = cross_val_score(
-        LinearSVC(C=1.0, dual=True, max_iter=5000),
-        X_train_s, y_train, cv=n_cv_folds, scoring='accuracy'
+        clf,
+        X_train, y_train, cv=n_cv_folds, scoring='accuracy'
     )
 
     return {
@@ -237,19 +240,7 @@ def run_posture_removal_experiment(
     if max_degrees is None:
         max_degrees = list(range(0, 10))
 
-    if num_signals is None:
-        num_signals = processed_segments[0].shape[0]
-
     segment_motion_ids = np.array(segment_motion_ids)
-
-    print("=" * 70)
-    print("  POSTURE-REMOVAL EXPERIMENT")
-    print("=" * 70)
-    print(f"  Segments: {len(processed_segments)}")
-    print(f"  Signals:  {num_signals}")
-    print(f"  Classes:  {len(np.unique(segment_motion_ids))}")
-    print(f"  Degrees:  {max_degrees}")
-    print("=" * 70)
 
     # Step 1: Analyze what degree-0 actually is
     print("\n[1/5] Analyzing degree-0 content...")
@@ -259,13 +250,13 @@ def run_posture_removal_experiment(
     print("\n[2/5] Mean-subtracting segments...")
     ms_segments, seg_means = subtract_segment_means(processed_segments)
 
-    test_coeffs = fit_legendre_polynomials(ms_segments[:5], 1)
+    test_coeffs = fit_legendre_polynomials(ms_segments[:5], 0)
     deg0_magnitude = np.mean([np.abs(c[:, 0]).mean() for c in test_coeffs])
     print(f"  Mean degree-0 magnitude after subtraction: {deg0_magnitude:.6f} (should be ~0)")
 
     # Step 3: Degree sweep on raw data
     print("\n[3/5] Degree sweep on RAW data (posture + dynamics)...")
-    raw_results = run_degree_sweep(processed_segments, segment_motion_ids, max_degrees, label='Raw')
+    raw_results = run_degree_sweep(processed_segments, segment_motion_ids, max_degrees, label='Original')
 
     # Step 4: Degree sweep on mean-subtracted data
     print("\n[4/5] Degree sweep on MEAN-SUBTRACTED data (dynamics only)...")
@@ -291,10 +282,10 @@ def run_posture_removal_experiment(
     print("\nGenerating figures...")
     _plot_main_comparison(raw_results, ms_results, comparison_results, posture_result, out_dir)
     _plot_accuracy_vs_dimension(raw_results, ms_results, comparison_results, out_dir)
-    _plot_information_decomposition(raw_results, ms_results, posture_result, out_dir)
-    _plot_generalization_gap_comparison(raw_results, ms_results, out_dir)
-    _plot_lda_comparison(processed_segments, ms_segments, segment_motion_ids,
-                         tmp_weights, out_dir)
+    # _plot_information_decomposition(raw_results, ms_results, posture_result, out_dir)
+    # _plot_generalization_gap_comparison(raw_results, ms_results, out_dir)
+    # _plot_lda_comparison(processed_segments, ms_segments, segment_motion_ids,
+    #                      tmp_weights, out_dir)
 
     _print_summary_table(raw_results, ms_results, comparison_results, posture_result)
     _save_results(raw_results, ms_results, comparison_results, posture_result, out_dir)
@@ -309,62 +300,45 @@ def run_posture_removal_experiment(
 
 def _plot_main_comparison(raw_results, ms_results, comp_results, posture_res, out_dir):
     """Key figure: Raw vs Mean-Subtracted accuracy with TMP reference."""
-    fig, axes = plt.subplots(1, 2, figsize=(18, 7))
+    fig, ax = plt.subplots(figsize=(7.0, 4.0))
 
     degrees = [r['degree'] for r in raw_results]
-
-    # Left: Test accuracy
-    ax = axes[0]
-    raw_test = [r['test_acc'] for r in raw_results]
-    ms_test = [r['test_acc'] for r in ms_results]
-
-    ax.plot(degrees, raw_test, 'o-', color='#E53935', lw=2.5, ms=9,
-            label='Legendre (raw = posture + dynamics)', zorder=5)
-    ax.plot(degrees, ms_test, 's-', color='#1E88E5', lw=2.5, ms=9,
-            label='Legendre (mean-subtracted = dynamics only)', zorder=5)
-    ax.axhline(posture_res['test_acc'], color='#FF9800', ls=':', lw=2.5,
-               label=f"Posture only (degree-0) = {posture_res['test_acc']:.3f}", zorder=4)
-
     colors_comp = {'TMP Weights': '#4CAF50', 'Autoencoder': '#9C27B0'}
-    for name, res in comp_results.items():
-        ax.axhline(res['test_acc'], color=colors_comp.get(name, 'gray'), ls='--', lw=2.5,
-                   label=f"{name} = {res['test_acc']:.3f} (dim={res['n_features']})", zorder=4)
-
-    ax.set_xlabel('Legendre Max Degree', fontsize=13, fontweight='bold')
-    ax.set_ylabel('Test Accuracy', fontsize=13, fontweight='bold')
-    ax.set_title('Classification: Raw vs Dynamics-Only', fontsize=14, fontweight='bold')
-    ax.set_xticks(degrees)
-    ax.grid(True, alpha=0.3)
-    ax.legend(fontsize=9, loc='lower left')
-    ax.set_ylim(bottom=min(min(raw_test), min(ms_test)) - 0.03)
-
-    # Right: CV accuracy
-    ax = axes[1]
     raw_cv = [r['cv_mean'] for r in raw_results]
     raw_cv_std = [r['cv_std'] for r in raw_results]
     ms_cv = [r['cv_mean'] for r in ms_results]
     ms_cv_std = [r['cv_std'] for r in ms_results]
 
     ax.errorbar(degrees, raw_cv, yerr=raw_cv_std, fmt='o-', color='#E53935',
-                lw=2.5, ms=9, capsize=4, label='Legendre (raw)', zorder=5)
+                lw=1.5, ms=5, capsize=3, label='Legendre (original=posture+dynamic)', zorder=5)
     ax.errorbar(degrees, ms_cv, yerr=ms_cv_std, fmt='s-', color='#1E88E5',
-                lw=2.5, ms=9, capsize=4, label='Legendre (mean-subtracted)', zorder=5)
+                lw=1.5, ms=5, capsize=3, label='Legendre (dynamics only)', zorder=5)
+
+    # Posture-only baseline (degree-0 / per-segment mean posture)
+    if posture_res is not None:
+        ax.axhline(posture_res['cv_mean'], color='#FF9800', ls=':', lw=1.8,
+                   label=f"Posture only CV = {posture_res['cv_mean']:.3f}+/-{posture_res['cv_std']:.3f}",
+                   zorder=4)
 
     for name, res in comp_results.items():
-        ax.axhline(res['cv_mean'], color=colors_comp.get(name, 'gray'), ls='--', lw=2.5,
+        ax.axhline(res['cv_mean'], color=colors_comp.get(name, 'gray'), ls='--', lw=1.8,
                    label=f"{name} CV = {res['cv_mean']:.3f}+/-{res['cv_std']:.3f}", zorder=4)
 
-    ax.set_xlabel('Legendre Max Degree', fontsize=13, fontweight='bold')
-    ax.set_ylabel('5-Fold CV Accuracy', fontsize=13, fontweight='bold')
-    ax.set_title('Cross-Validation: Raw vs Dynamics-Only', fontsize=14, fontweight='bold')
+    ax.set_xlabel('Legendre Max Degree', fontsize=12, fontweight='bold')
+    ax.set_ylabel('5-Fold CV Accuracy', fontsize=12, fontweight='bold')
+    ax.set_title('Cross-Validation: Raw vs Dynamics-Only', fontsize=12, fontweight='bold')
     ax.set_xticks(degrees)
+    ax.tick_params(axis='both', labelsize=11)
     ax.grid(True, alpha=0.3)
-    ax.legend(fontsize=9, loc='lower left')
+    # Legend inside the axes on the right (lower-right is empty since the
+    # dynamics-only curve rises and plateaus on the left half).
+    ax.legend(fontsize=10, loc='center right', frameon=True,
+              framealpha=0.9, borderaxespad=0.6)
 
-    fig.suptitle('The Posture Bias: Removing Mean Position Reveals True Dynamic Discriminability',
-                 fontsize=15, fontweight='bold', y=1.02)
     plt.tight_layout()
-    plt.savefig(out_dir / 'main_comparison_raw_vs_meansub.png', dpi=300, bbox_inches='tight')
+    out_png = out_dir / 'main_comparison_raw_vs_meansub.png'
+    plt.savefig(out_png, dpi=300, bbox_inches='tight')
+    plt.savefig(out_png.with_suffix('.svg'), bbox_inches='tight', facecolor='white')
     plt.close()
     print(f"  Saved: main_comparison_raw_vs_meansub.png")
 
@@ -413,126 +387,126 @@ def _plot_accuracy_vs_dimension(raw_results, ms_results, comp_results, out_dir):
     print(f"  Saved: accuracy_vs_dimension.png")
 
 
-def _plot_information_decomposition(raw_results, ms_results, posture_res, out_dir):
-    """Bar chart: how much accuracy comes from posture vs dynamics."""
-    fig, ax = plt.subplots(figsize=(14, 7))
-
-    degrees = [r['degree'] for r in raw_results]
-    raw_acc = np.array([r['test_acc'] for r in raw_results])
-    ms_acc = np.array([r['test_acc'] for r in ms_results])
-    posture_acc = posture_res['test_acc']
-
-    x = np.arange(len(degrees))
-    width = 0.35
-
-    ax.bar(x - width / 2, raw_acc, width, color='#E53935', alpha=0.8,
-           edgecolor='black', label='Raw Legendre (total)')
-    ax.bar(x + width / 2, ms_acc, width, color='#1E88E5', alpha=0.8,
-           edgecolor='black', label='Mean-subtracted (dynamics only)')
-    ax.axhline(posture_acc, color='#FF9800', ls='--', lw=2.5,
-               label=f'Posture alone = {posture_acc:.3f}')
-
-    for i, (ra, ma) in enumerate(zip(raw_acc, ms_acc)):
-        gap = ra - ma
-        if abs(gap) > 0.005:
-            ax.annotate(f'{gap:+.2f}',
-                        xy=(x[i], max(ra, ma) + 0.005),
-                        ha='center', fontsize=8, color='#333', fontweight='bold')
-
-    ax.set_xlabel('Legendre Max Degree', fontsize=13, fontweight='bold')
-    ax.set_ylabel('Test Accuracy', fontsize=13, fontweight='bold')
-    ax.set_title('Information Decomposition: Posture vs Dynamics\n'
-                 'Gap between red and blue = contribution of posture information',
-                 fontsize=13, fontweight='bold')
-    ax.set_xticks(x)
-    ax.set_xticklabels(degrees)
-    ax.grid(True, alpha=0.3, axis='y')
-    ax.legend(fontsize=10)
-    ax.set_ylim(bottom=max(0.5, min(min(raw_acc), min(ms_acc)) - 0.05))
-    plt.tight_layout()
-    plt.savefig(out_dir / 'information_decomposition.png', dpi=300, bbox_inches='tight')
-    plt.close()
-    print(f"  Saved: information_decomposition.png")
-
-
-def _plot_generalization_gap_comparison(raw_results, ms_results, out_dir):
-    """Compare overfitting between raw and mean-subtracted."""
-    fig, ax = plt.subplots(figsize=(12, 6))
-
-    degrees = [r['degree'] for r in raw_results]
-    raw_gap = [r['train_acc'] - r['test_acc'] for r in raw_results]
-    ms_gap = [r['train_acc'] - r['test_acc'] for r in ms_results]
-
-    ax.plot(degrees, raw_gap, 'o-', color='#E53935', lw=2.5, ms=9,
-            label='Raw Legendre')
-    ax.plot(degrees, ms_gap, 's-', color='#1E88E5', lw=2.5, ms=9,
-            label='Mean-subtracted Legendre')
-
-    ax.set_xlabel('Max Degree', fontsize=13, fontweight='bold')
-    ax.set_ylabel('Train - Test Accuracy (overfitting)', fontsize=13, fontweight='bold')
-    ax.set_title('Generalization Gap: Raw vs Dynamics-Only',
-                 fontsize=14, fontweight='bold')
-    ax.set_xticks(degrees)
-    ax.grid(True, alpha=0.3)
-    ax.legend(fontsize=11)
-    plt.tight_layout()
-    plt.savefig(out_dir / 'generalization_gap_comparison.png', dpi=300, bbox_inches='tight')
-    plt.close()
-    print(f"  Saved: generalization_gap_comparison.png")
+# def _plot_information_decomposition(raw_results, ms_results, posture_res, out_dir):
+#     """Bar chart: how much accuracy comes from posture vs dynamics."""
+#     fig, ax = plt.subplots(figsize=(14, 7))
+#
+#     degrees = [r['degree'] for r in raw_results]
+#     raw_acc = np.array([r['test_acc'] for r in raw_results])
+#     ms_acc = np.array([r['test_acc'] for r in ms_results])
+#     posture_acc = posture_res['test_acc']
+#
+#     x = np.arange(len(degrees))
+#     width = 0.35
+#
+#     ax.bar(x - width / 2, raw_acc, width, color='#E53935', alpha=0.8,
+#            edgecolor='black', label='Raw Legendre (total)')
+#     ax.bar(x + width / 2, ms_acc, width, color='#1E88E5', alpha=0.8,
+#            edgecolor='black', label='Mean-subtracted (dynamics only)')
+#     ax.axhline(posture_acc, color='#FF9800', ls='--', lw=2.5,
+#                label=f'Posture alone = {posture_acc:.3f}')
+#
+#     for i, (ra, ma) in enumerate(zip(raw_acc, ms_acc)):
+#         gap = ra - ma
+#         if abs(gap) > 0.005:
+#             ax.annotate(f'{gap:+.2f}',
+#                         xy=(x[i], max(ra, ma) + 0.005),
+#                         ha='center', fontsize=8, color='#333', fontweight='bold')
+#
+#     ax.set_xlabel('Legendre Max Degree', fontsize=13, fontweight='bold')
+#     ax.set_ylabel('Test Accuracy', fontsize=13, fontweight='bold')
+#     ax.set_title('Information Decomposition: Posture vs Dynamics\n'
+#                  'Gap between red and blue = contribution of posture information',
+#                  fontsize=13, fontweight='bold')
+#     ax.set_xticks(x)
+#     ax.set_xticklabels(degrees)
+#     ax.grid(True, alpha=0.3, axis='y')
+#     ax.legend(fontsize=10)
+#     ax.set_ylim(bottom=max(0.5, min(min(raw_acc), min(ms_acc)) - 0.05))
+#     plt.tight_layout()
+#     plt.savefig(out_dir / 'information_decomposition.png', dpi=300, bbox_inches='tight')
+#     plt.close()
+#     print(f"  Saved: information_decomposition.png")
 
 
-def _plot_lda_comparison(raw_segments, ms_segments, labels, tmp_weights, out_dir):
-    """Side-by-side LDA: Raw deg-1, Mean-sub deg-1, TMP weights."""
-    n_panels = 2 + (1 if tmp_weights is not None else 0)
-    fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 7))
-    if n_panels == 1:
-        axes = [axes]
+# def _plot_generalization_gap_comparison(raw_results, ms_results, out_dir):
+#     """Compare overfitting between raw and mean-subtracted."""
+#     fig, ax = plt.subplots(figsize=(12, 6))
+#
+#     degrees = [r['degree'] for r in raw_results]
+#     raw_gap = [r['train_acc'] - r['test_acc'] for r in raw_results]
+#     ms_gap = [r['train_acc'] - r['test_acc'] for r in ms_results]
+#
+#     ax.plot(degrees, raw_gap, 'o-', color='#E53935', lw=2.5, ms=9,
+#             label='Raw Legendre')
+#     ax.plot(degrees, ms_gap, 's-', color='#1E88E5', lw=2.5, ms=9,
+#             label='Mean-subtracted Legendre')
+#
+#     ax.set_xlabel('Max Degree', fontsize=13, fontweight='bold')
+#     ax.set_ylabel('Train - Test Accuracy (overfitting)', fontsize=13, fontweight='bold')
+#     ax.set_title('Generalization Gap: Raw vs Dynamics-Only',
+#                  fontsize=14, fontweight='bold')
+#     ax.set_xticks(degrees)
+#     ax.grid(True, alpha=0.3)
+#     ax.legend(fontsize=11)
+#     plt.tight_layout()
+#     plt.savefig(out_dir / 'generalization_gap_comparison.png', dpi=300, bbox_inches='tight')
+#     plt.close()
+#     print(f"  Saved: generalization_gap_comparison.png")
 
-    classes = np.unique(labels)
-    n_classes = len(classes)
-    colors = plt.cm.tab20(np.linspace(0, 1, n_classes))
 
-    datasets = []
-
-    raw_coeffs = fit_legendre_polynomials(raw_segments, 1)
-    X_raw = np.array([c.flatten() for c in raw_coeffs])
-    datasets.append(('Legendre d=1\n(posture + dynamics)', X_raw))
-
-    ms_coeffs = fit_legendre_polynomials(ms_segments, 1)
-    X_ms = np.array([c.flatten() for c in ms_coeffs])
-    datasets.append(('Legendre d=1\n(dynamics only)', X_ms))
-
-    if tmp_weights is not None:
-        datasets.append(('TMP Weights', tmp_weights))
-
-    for idx, (title, X) in enumerate(datasets):
-        ax = axes[idx]
-        Xs = StandardScaler().fit_transform(X)
-        nc = min(n_classes - 1, X.shape[1])
-        lda = LinearDiscriminantAnalysis(n_components=nc)
-        Xl = lda.fit_transform(Xs, labels)
-        evr = lda.explained_variance_ratio_
-
-        for ci, cls in enumerate(classes):
-            m = labels == cls
-            ax.scatter(Xl[m, 0], Xl[m, 1], c=[colors[ci]], alpha=0.35, s=20)
-            cx, cy = Xl[m, 0].mean(), Xl[m, 1].mean()
-            ax.scatter(cx, cy, c=[colors[ci]], s=200, marker='X',
-                       edgecolors='black', linewidths=2, zorder=10)
-            ax.annotate(str(cls), (cx, cy), fontsize=8, fontweight='bold',
-                        ha='center', va='bottom', xytext=(0, 6), textcoords='offset points')
-
-        ax.set_xlabel(f'LD1 ({evr[0]:.1%})', fontsize=11, fontweight='bold')
-        ax.set_ylabel(f'LD2 ({evr[1]:.1%})', fontsize=11, fontweight='bold')
-        ax.set_title(title, fontsize=12, fontweight='bold')
-        ax.grid(True, alpha=0.3)
-
-    fig.suptitle('LDA Projection: Posture-Based vs Dynamics-Based Representations',
-                 fontsize=14, fontweight='bold')
-    plt.tight_layout()
-    plt.savefig(out_dir / 'lda_comparison_raw_vs_meansub.png', dpi=300, bbox_inches='tight')
-    plt.close()
-    print(f"  Saved: lda_comparison_raw_vs_meansub.png")
+# def _plot_lda_comparison(raw_segments, ms_segments, labels, tmp_weights, out_dir):
+#     """Side-by-side LDA: Raw deg-1, Mean-sub deg-1, TMP weights."""
+#     n_panels = 2 + (1 if tmp_weights is not None else 0)
+#     fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 7))
+#     if n_panels == 1:
+#         axes = [axes]
+#
+#     classes = np.unique(labels)
+#     n_classes = len(classes)
+#     colors = plt.cm.tab20(np.linspace(0, 1, n_classes))
+#
+#     datasets = []
+#
+#     raw_coeffs = fit_legendre_polynomials(raw_segments, 1)
+#     X_raw = np.array([c.flatten() for c in raw_coeffs])
+#     datasets.append(('Legendre d=1\n(posture + dynamics)', X_raw))
+#
+#     ms_coeffs = fit_legendre_polynomials(ms_segments, 1)
+#     X_ms = np.array([c.flatten() for c in ms_coeffs])
+#     datasets.append(('Legendre d=1\n(dynamics only)', X_ms))
+#
+#     if tmp_weights is not None:
+#         datasets.append(('TMP Weights', tmp_weights))
+#
+#     for idx, (title, X) in enumerate(datasets):
+#         ax = axes[idx]
+#         Xs = StandardScaler().fit_transform(X)
+#         nc = min(n_classes - 1, X.shape[1])
+#         lda = LinearDiscriminantAnalysis(n_components=nc)
+#         Xl = lda.fit_transform(Xs, labels)
+#         evr = lda.explained_variance_ratio_
+#
+#         for ci, cls in enumerate(classes):
+#             m = labels == cls
+#             ax.scatter(Xl[m, 0], Xl[m, 1], c=[colors[ci]], alpha=0.35, s=20)
+#             cx, cy = Xl[m, 0].mean(), Xl[m, 1].mean()
+#             ax.scatter(cx, cy, c=[colors[ci]], s=200, marker='X',
+#                        edgecolors='black', linewidths=2, zorder=10)
+#             ax.annotate(str(cls), (cx, cy), fontsize=8, fontweight='bold',
+#                         ha='center', va='bottom', xytext=(0, 6), textcoords='offset points')
+#
+#         ax.set_xlabel(f'LD1 ({evr[0]:.1%})', fontsize=11, fontweight='bold')
+#         ax.set_ylabel(f'LD2 ({evr[1]:.1%})', fontsize=11, fontweight='bold')
+#         ax.set_title(title, fontsize=12, fontweight='bold')
+#         ax.grid(True, alpha=0.3)
+#
+#     fig.suptitle('LDA Projection: Posture-Based vs Dynamics-Based Representations',
+#                  fontsize=14, fontweight='bold')
+#     plt.tight_layout()
+#     plt.savefig(out_dir / 'lda_comparison_raw_vs_meansub.png', dpi=300, bbox_inches='tight')
+#     plt.close()
+#     print(f"  Saved: lda_comparison_raw_vs_meansub.png")
 
 
 # =========================================================================
@@ -609,33 +583,66 @@ def _save_results(raw_results, ms_results, comp_results, posture_res, out_dir):
     print(f"  Saved: experiment_results.txt")
 
 
-# =========================================================================
-# Demo
-# =========================================================================
-
 if __name__ == "__main__":
-    print("Running synthetic demo...\n")
-    np.random.seed(42)
-
-    n_classes, n_per_class, n_signals = 12, 80, 48
-
-    segments = []
-    labels = []
-    for cls in range(n_classes):
-        class_posture = np.random.randn(n_signals) * 3 + cls * 0.5
-        for _ in range(n_per_class):
-            t_len = np.random.randint(40, 80)
-            t = np.linspace(0, 2 * np.pi, t_len)
-            dynamics = 0.3 * np.outer(np.random.randn(n_signals), np.sin(t + np.random.rand() * np.pi))
-            noise = np.random.randn(n_signals, t_len) * 0.2
-            seg = class_posture[:, None] + dynamics + noise
-            segments.append(seg)
-            labels.append(cls)
-    labels = np.array(labels)
-
-    run_posture_removal_experiment(
-        processed_segments=segments,
-        segment_motion_ids=labels,
-        out_dir='/tmp/posture_demo',
-        max_degrees=list(range(1, 7)),
+    num_MPs = 5
+    tpoints = 35
+    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_mp_model_{num_MPs}_phase_three")
+    model_file = os.path.join(
+        model_dir,
+        f"mp_model_{num_MPs}_PC_tpoints_{tpoints}"
     )
+    out_dir = os.path.join(model_dir, "legendre_analysis")
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    folder_path = "./../../data/pymotion_position_csv_files"
+    motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=folder_path,
+                                                                             data_type="position",
+                                                                             filtering=False)
+    num_segments = len(processed_segments)
+    num_signals = processed_segments[0].shape[0]
+
+    tmp_model = load_model_with_full_state(
+        model_file,
+        num_segments=num_segments,
+        num_signals=num_signals
+    )
+
+    X_tmp = prepare_weights_for_classification(tmp_model, num_segments, num_signals, num_MPs)
+    y_tmp = np.array(segment_motion_ids)
+    print(f"TMP Feature matrix shape: {X_tmp.shape}")
+    print(f"Label array shape: {y_tmp.shape}")
+
+    results = run_posture_removal_experiment(
+        processed_segments=processed_segments,
+        segment_motion_ids=segment_motion_ids,
+        out_dir=os.path.join(out_dir, "posture_experiment"),
+        tmp_weights=X_tmp,  # or None
+        ae_latents=None,  # or your AE features
+        max_degrees=list(range(0, 10)),
+    )
+    # print("Running synthetic demo...\n")
+    # np.random.seed(42)
+    #
+    # n_classes, n_per_class, n_signals = 12, 80, 48
+    #
+    # segments = []
+    # labels = []
+    # for cls in range(n_classes):
+    #     class_posture = np.random.randn(n_signals) * 3 + cls * 0.5
+    #     for _ in range(n_per_class):
+    #         t_len = np.random.randint(40, 80)
+    #         t = np.linspace(0, 2 * np.pi, t_len)
+    #         dynamics = 0.3 * np.outer(np.random.randn(n_signals), np.sin(t + np.random.rand() * np.pi))
+    #         noise = np.random.randn(n_signals, t_len) * 0.2
+    #         seg = class_posture[:, None] + dynamics + noise
+    #         segments.append(seg)
+    #         labels.append(cls)
+    # labels = np.array(labels)
+    #
+    # run_posture_removal_experiment(
+    #     processed_segments=segments,
+    #     segment_motion_ids=labels,
+    #     out_dir='/tmp/posture_demo',
+    #     max_degrees=list(range(1, 7)),
+    # )

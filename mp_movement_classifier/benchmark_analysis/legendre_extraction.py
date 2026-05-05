@@ -13,21 +13,16 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
-from sklearn.neural_network import MLPClassifier
 from sklearn.model_selection import cross_val_score
 from sklearn.decomposition import PCA
 from pathlib import Path
 from mp_movement_classifier.utils import config
 from mp_movement_classifier.classification.utils import calculate_rdm
 from mp_movement_classifier.classification.classification_pipeline import run_classification_pipeline
-from mp_movement_classifier.tmp_extraction.weight_visulaization import (extract_and_save_avg_weights_for_motions,
-                                                                        load_motion_mapping,
-                                                                        weights_barplot_across_channels)
+from mp_movement_classifier.tmp_extraction.weights_analysis import load_motion_mapping
 from mp_movement_classifier.utils.utils import (
     load_model_with_full_state,
     process_motion_data,
-    process_bvh_data,
-    read_bvh_files,
     save_model_with_full_state,
 
 )

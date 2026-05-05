@@ -2,7 +2,7 @@
 """
 Analyze and visualize TMP model weights across movements and joints.
 
-This script integrates with your BVH processing pipeline to:
+This script :
 1. Load trained TMP model with segment-to-motion mapping
 2. Compare weights across different movements
 3. Analyze variance of coordinates among joints
@@ -32,22 +32,7 @@ CHANNEL_NAMES = []
 for joint in JOINT_NAMES:
     CHANNEL_NAMES.extend([f'{joint}_Xpos', f'{joint}_Ypos', f'{joint}_Zpos'])
 
-#### for quaternion
-# JOINT_NAMES = [
-#     'Hip', 'RHip', 'RKnee', 'RAnkle', 'LHip', 'LKnee', 'LAnkle',
-#     'Spine', 'Thorax', 'Neck', 'Head',
-#     'LShoulder', 'LElbow', 'LWrist', 'RShoulder', 'RElbow', 'RWrist'
-# ]
-# COORD_NAMES = ['W','X', 'Y', 'Z']
-# CHANNEL_NAMES = []
-# for joint in JOINT_NAMES:
-#     if joint=='Hip':
-#         CHANNEL_NAMES.extend([f'{joint}_Xpos', f'{joint}_Ypos', f'{joint}_Zpos'])
-#     for coord in COORD_NAMES:
-#         CHANNEL_NAMES.extend([f'{joint}_{coord}'])
-
 DEFAULT_MODEL_DIR = "../../results/tmp_configs"
-DEFAULT_DATA_DIR = "../../data/filtered_bvh_files"
 DEFAULT_MOTION_MAPPING = "../../data/motion_mapping.json"
 
 
@@ -65,28 +50,6 @@ def load_motion_mapping(mapping_file):
     # for motion_id, name in sorted(motion_id_to_name.items()):
     #     print(f"    ID {motion_id}: {name}")
     return motion_id_to_name
-
-def load_segment_motion_ids(bvh_dir, cutoff_freq=6.0):
-
-
-        bvh_data, motion_ids = read_bvh_files(bvh_dir)
-
-        processed_segments, segment_motion_ids = process_bvh_data(
-            bvh_dir,
-            motion_ids,
-            cutoff_freq=cutoff_freq
-        )
-
-        print(f"loaded {len(segment_motion_ids)} segments")
-
-        # Count segments per motion
-        unique_motions, counts = np.unique(segment_motion_ids, return_counts=True)
-        print(f"\nSegments per motion:")
-        for motion_id, count in zip(unique_motions, counts):
-            print(f"    Motion {motion_id}: {count} segments")
-
-        return np.array(segment_motion_ids)
-
 
 def compare_weights_across_movements(weights, motion_ids, motion_names_dict=None,save_dir='./plots'):
     """
@@ -144,8 +107,8 @@ def weights_barplot_across_channels(weights, motion_ids, motion_names_dict=None,
     """
     Plot weight distributions across channels.
 
-    For each channel, creates one figure showing the first 5 MP weights
-    grouped by movement. All 5 MPs of one movement share the same color.
+    For each channel, creates one figure showing the first 4 MP weights
+    grouped by movement. All 4 MPs of one movement share the same color.
     Colors are consistent across all channels based on motion ID.
 
     Parameters:
@@ -200,7 +163,7 @@ def weights_barplot_across_channels(weights, motion_ids, motion_names_dict=None,
         color_map[motion_id] = fixed_colors[idx % len(fixed_colors)]
 
     # Number of MPs to display
-    n_mps_to_show = min(4, num_MPs)
+    n_mps_to_show = min(2, num_MPs)
 
     # Iterate over each channel
     for joint_idx in range(num_joints_coord):
@@ -331,7 +294,7 @@ def vis_median_weights_movements(weights, motion_ids, motion_names_dict=None,sav
         motion_labels = [f'Motion {m}' for m in unique_motions]
 
     # For each MP, show comparison across joints and movements
-    for mp_idx in range(min(num_MPs, 10)):  # Show first 10 MPs
+    for mp_idx in range(min(num_MPs, 5)):  # Show first 5 MPs
         n_motions = len(unique_motions)
 
         for i, motion_id in enumerate(unique_motions):
@@ -468,7 +431,6 @@ def reconstruct_segments_with_avg_weights(model_path, avg_weights, segment_lengt
     """
     # Load model
     model = torch.load(model_path, map_location='cpu', weights_only=False)
-
     # Extract necessary components
     MPs = model['MPs']
     kernel_params = {
@@ -481,9 +443,7 @@ def reconstruct_segments_with_avg_weights(model_path, avg_weights, segment_lengt
 
     # Get averaged weights for this motion
     avg_weights = avg_weights
-
     resampling_matrices = model['resampling_matrix']
-
     resampling_mat = resampling_matrices.get(segment_length, None)
 
     reconstructed = reconstruct_from_weights(
@@ -497,49 +457,47 @@ def reconstruct_segments_with_avg_weights(model_path, avg_weights, segment_lengt
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description='Analyze TMP model weights across movements and joints',
-        formatter_class=argparse.RawDescriptionHelpFormatter
+    num_MPs = 5
+    tpoints = 35
+
+    model_subdir = os.path.join("./../../results/tmp_configs", f"new_seg_mp_model_{num_MPs}_phase_three")
+    model_path = os.path.join(
+        model_subdir,
+        f"mp_model_{num_MPs}_PC_tpoints_{tpoints}"
     )
 
-    parser.add_argument('--model-dir', type=str, default=DEFAULT_MODEL_DIR,
-                        help=f'Directory containing trained models (default: {DEFAULT_MODEL_DIR})')
-    parser.add_argument('--bvh-dir', type=str, default=DEFAULT_DATA_DIR,
-                        help=f'Directory containing BVH files (default: {DEFAULT_DATA_DIR})')
-    parser.add_argument('--num-mps', type=int, default=20,
-                        help='Number of MPs in model (default: 20)')
-
-    args = parser.parse_args()
+    output_dir = os.path.join(model_subdir, "weights_analysis")
+    folder_path = "../../data/pymotion_position_csv_files"
 
     # Load motion mapping
     motion_id_to_name = load_motion_mapping(DEFAULT_MOTION_MAPPING)
-
-    model_subdir = os.path.join(DEFAULT_MODEL_DIR, f"new_seg_exponential_mp_model_10_tpoints_30_phase_two")
-    model_name = "mp_model_10_PC_tpoints_30"
-
-    model_path = os.path.join(model_subdir,model_name)
-
     # extract weights form the model
     model_data = torch.load(model_path, map_location='cpu', weights_only=False)
     print(model_data.keys())
     weights = model_data['weights']
 
-    args.bvh_dir = DEFAULT_DATA_DIR
-    folder_path = "../../data/pymotion_exponential_csv_files"
     motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=folder_path,
                                                                              data_type="position",
                                                                              filtering=False)
+    ####
+    # Visulaization of weights
+    ####
 
-    output_dir = os.path.join(model_subdir,"weights_analysis")
+    # barplot of all joints for specific MP across all segments of one specific movment
     # compare_weights_across_movements(weights, segment_motion_ids,motion_id_to_name,
     #                                  output_dir)
+
     save_dir = os.path.join(output_dir, "channels_visualization")
     weights_barplot_across_channels(weights, segment_motion_ids,motion_id_to_name,
                                     save_dir = save_dir)
-    output_dir = os.path.join(output_dir, "median_weights")
-    vis_median_weights_movements(weights, segment_motion_ids,motion_id_to_name,
-                                     output_dir)
 
+    save_dir = os.path.join(output_dir, "median_weights")
+    vis_median_weights_movements(weights, segment_motion_ids,motion_id_to_name,
+                                     save_dir)
+
+    ####
+    # Extract and save weights
+    ####
     output_dir = os.path.join(model_subdir, "averaged_weights")
     avg_weights_dict = extract_and_save_avg_weights_for_motions(
         weights=weights,

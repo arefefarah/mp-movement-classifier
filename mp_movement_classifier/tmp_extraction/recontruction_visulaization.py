@@ -11,7 +11,7 @@ import json
 import imageio.v2 as imageio
 from matplotlib.animation import FuncAnimation
 
-from mp_movement_classifier.tmp_extraction.weight_visulaization import reconstruct_segments_with_avg_weights
+from mp_movement_classifier.tmp_extraction.weights_analysis import reconstruct_segments_with_avg_weights
 from mp_movement_classifier.benchmark_analysis.legendre_extraction import generate_legendre_basis
 from mp_movement_classifier.utils import config
 from pymotion.io.bvh import BVH

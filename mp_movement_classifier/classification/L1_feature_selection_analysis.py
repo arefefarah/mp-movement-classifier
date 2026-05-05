@@ -78,7 +78,7 @@ def create_feature_names(num_signals: int, num_MPs: int) -> List[str]:
             signal_name = f"Signal_{signal_idx}"
 
         for mp_idx in range(num_MPs):
-            feature_names.append(f"{signal_name}_MP{mp_idx}")
+            feature_names.append(f"{signal_name}_MP{mp_idx + 1}") # start form 1 when assign num to coefficients in plot only
 
     return feature_names
 
