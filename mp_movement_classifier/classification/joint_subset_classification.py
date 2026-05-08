@@ -1,13 +1,22 @@
 """
 Joint-subset classification.
 
-Restrict the TMP weight feature matrix to a chosen set of joints
-(Wrists, Knees, Ankles, Neck, Elbows — both R and L when applicable),
-keep ALL channels (x/y/z) and ALL MPs of those joints, and run only the
-supervised parts of the shared pipeline (train/test, CV, confusion
-matrix, classification report, feature importance).
+Runs three complementary subset experiments on TMP weights and compares
+them with confusion matrices + accuracy tables. Each experiment uses
+both Linear SVC and Random Forest. Only the supervised parts of the
+shared pipeline are run (train/test, CV, confusion matrix, classification
+report, feature importance) — PCA, t-SNE, RDM, and motion legend are
+skipped on purpose.
 
-Skips PCA, t-SNE, RDM, and motion legend on purpose.
+Experiments
+-----------
+1) keep_5_joints_all_MPs   — keep ONLY {Wrists, Knees, Ankles, Neck,
+                              Elbows} (L+R, x/y/z), all MPs per channel.
+2) exclude_5_joints_all_MPs — INVERSE of (1): drop those 5 joints, use all
+                              OTHER signals (all MPs per channel).
+3) keep_5_joints_MP0_only   — same channels as (1), but only MP index 0
+                              per channel (so we can see what dropping
+                              the higher-order primitives costs).
 
 Reuses (no duplication):
   - SIGNAL_NAMES + create_feature_names from L1_feature_selection_analysis
@@ -18,19 +27,21 @@ Reuses (no duplication):
     classification.utils
 
 Outputs (under <model_dir>/joint_subset_classification/):
-  - selected_channels.txt          : exact list of signals + MP features used
-  - subset_summary.txt             : train/test accuracy table per classifier
-  - confusion_matrix_<clf>.{png,svg}
-  - classification_report_<clf>.txt
-  - cross_validation_<clf>.txt
-  - feature_importance_<clf>.png
+  - experiments_comparison.txt           : cross-experiment summary table
+  - <experiment_name>/
+      - selected_channels.txt            : exact list of signals + MPs used
+      - subset_summary.txt               : train/test acc per classifier
+      - confusion_matrix_<clf>.{png,svg}
+      - classification_report_<clf>.txt
+      - cross_validation_<clf>.txt
+      - feature_importance_<clf>.png
 """
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import List, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
 from sklearn.base import clone
@@ -86,37 +97,55 @@ def subset_feature_matrix(
         X: np.ndarray,
         signal_indices: Sequence[int],
         num_MPs: int,
+        mp_indices: Optional[Sequence[int]] = None,
 ) -> Tuple[np.ndarray, List[int]]:
     """
-    Subset columns of X corresponding to selected signals.
+    Subset columns of X corresponding to selected signals (and optionally a
+    subset of MP indices within each signal).
 
     X has columns laid out as [signal_0_mp_0, signal_0_mp_1, ..., signal_0_mp_{K-1},
                                signal_1_mp_0, ...] (matches prepare_weights_for_classification).
+
+    Parameters
+    ----------
+    mp_indices : sequence of ints in [0, num_MPs), optional
+        Which MP positions to keep within each selected signal. None = all MPs.
     """
+    if mp_indices is None:
+        mp_indices = range(num_MPs)
     feat_idx: List[int] = []
     for s in signal_indices:
         base = s * num_MPs
-        feat_idx.extend(range(base, base + num_MPs))
+        for m in mp_indices:
+            feat_idx.append(base + m)
     return X[:, feat_idx], feat_idx
 
 
 def write_selected_channels_report(
         out_path: Path,
+        experiment_name: str,
+        description: str,
         signal_indices: Sequence[int],
         signal_names: Sequence[str],
         feature_names_subset: Sequence[str],
         num_MPs: int,
         num_signals_total: int,
+        mp_indices: Optional[Sequence[int]] = None,
 ) -> None:
     n_sel = len(signal_indices)
+    n_mps_used = num_MPs if mp_indices is None else len(list(mp_indices))
+    mps_used_str = "all" if mp_indices is None else str(list(mp_indices))
     with open(out_path, 'w') as f:
-        f.write("Joint-subset classification: selected channels\n")
+        f.write(f"Joint-subset classification: {experiment_name}\n")
         f.write("=" * 70 + "\n\n")
-        f.write(f"Keywords:                {list(JOINT_KEYWORDS)}\n")
+        f.write(f"Description:             {description}\n")
+        f.write(f"Keywords (matched on):   {list(JOINT_KEYWORDS)}\n")
         f.write(f"Signals selected:        {n_sel} / {num_signals_total}\n")
-        f.write(f"MPs per signal:          {num_MPs}\n")
-        f.write(f"Total features used:     {n_sel * num_MPs}\n")
-        f.write(f"Total features dropped:  {(num_signals_total - n_sel) * num_MPs}\n\n")
+        f.write(f"MP indices used:         {mps_used_str}  "
+                f"(MPs/signal in model = {num_MPs})\n")
+        f.write(f"Total features used:     {n_sel * n_mps_used}\n")
+        f.write(f"Total features dropped:  "
+                f"{num_signals_total * num_MPs - n_sel * n_mps_used}\n\n")
 
         f.write("Signal channels included (index : name):\n")
         f.write("-" * 70 + "\n")
@@ -217,6 +246,94 @@ def run_supervised_only(
     }
 
 
+def run_experiment(
+        experiment_name: str,
+        description: str,
+        X_full: np.ndarray,
+        y: np.ndarray,
+        signal_indices: Sequence[int],
+        full_feature_names: Sequence[str],
+        num_signals: int,
+        num_MPs: int,
+        out_dir_root: Path,
+        classifier_specs: Sequence[dict],
+        mp_indices: Optional[Sequence[int]] = None,
+        seed: int = 42,
+) -> List[dict]:
+    """
+    Run a single subset experiment end-to-end and write all artifacts to
+    ``out_dir_root / experiment_name``. Returns the per-classifier summary
+    rows so callers can build a cross-experiment comparison table.
+    """
+    out_dir = out_dir_root / experiment_name
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"\n{'#' * 78}")
+    print(f"# Experiment: {experiment_name}")
+    print(f"# {description}")
+    print(f"{'#' * 78}")
+
+    if len(signal_indices) == 0:
+        raise RuntimeError(f"[{experiment_name}] No signals selected.")
+
+    X_sub, feat_idx = subset_feature_matrix(
+        X_full, signal_indices, num_MPs, mp_indices=mp_indices,
+    )
+    feature_names_subset = [full_feature_names[i] for i in feat_idx]
+
+    n_mps_used = num_MPs if mp_indices is None else len(list(mp_indices))
+    print(f"  feature matrix: {X_sub.shape}  "
+          f"({len(signal_indices)} signals × {n_mps_used} MPs)")
+
+    write_selected_channels_report(
+        out_path=out_dir / "selected_channels.txt",
+        experiment_name=experiment_name,
+        description=description,
+        signal_indices=signal_indices,
+        signal_names=SIGNAL_NAMES,
+        feature_names_subset=feature_names_subset,
+        num_MPs=num_MPs,
+        num_signals_total=num_signals,
+        mp_indices=mp_indices,
+    )
+
+    summary_rows = []
+    for spec in classifier_specs:
+        print(f"\n=== {spec['label']} ===")
+        row = run_supervised_only(
+            X=X_sub, y=y, clf=spec["model"],
+            clf_key=spec["key"], clf_label=spec["label"],
+            scale=spec["scale"],
+            feature_names=feature_names_subset,
+            out_dir=out_dir, seed=seed, cv_folds=5,
+        )
+        row["experiment"] = experiment_name
+        row["n_features"] = X_sub.shape[1]
+        summary_rows.append(row)
+
+    # Per-experiment summary table
+    with open(out_dir / "subset_summary.txt", "w") as f:
+        f.write(f"Experiment: {experiment_name}\n")
+        f.write(f"  {description}\n")
+        f.write("=" * 78 + "\n")
+        f.write(f"Signals selected:   {len(signal_indices)} / {num_signals}\n")
+        mps_used_str = "all" if mp_indices is None else str(list(mp_indices))
+        f.write(f"MP indices used:    {mps_used_str}\n")
+        f.write(f"Feature dim used:   {X_sub.shape[1]}\n\n")
+        f.write(f"{'Classifier':<18}{'Train acc':>12}{'Test acc':>12}"
+                f"{'CV mean':>12}{'CV std':>10}{'n_train':>10}{'n_test':>10}\n")
+        f.write("-" * 78 + "\n")
+        for s in summary_rows:
+            f.write(
+                f"{s['label']:<18}"
+                f"{s['train_acc']:>12.4f}{s['test_acc']:>12.4f}"
+                f"{s['cv_acc_mean']:>12.4f}{s['cv_acc_std']:>10.4f}"
+                f"{s['n_train']:>10d}{s['n_test']:>10d}\n"
+            )
+    print(f"  ✓ Wrote: {out_dir / 'subset_summary.txt'}")
+    return summary_rows
+
+
 def main() -> None:
     # ---------- Configuration (mirrors L1_feature_selection_analysis.main) ----------
     num_MPs = 5
@@ -256,27 +373,15 @@ def main() -> None:
     full_feature_names = create_feature_names(num_signals, num_MPs)
     print(f"  full feature matrix: {X_full.shape}")
 
-    # ---------- Subset to chosen joints ----------
-    signal_indices = select_signal_indices(SIGNAL_NAMES, JOINT_KEYWORDS)
-    if len(signal_indices) == 0:
+    # ---------- Define joint partitions ----------
+    keep_indices = select_signal_indices(SIGNAL_NAMES, JOINT_KEYWORDS)
+    if len(keep_indices) == 0:
         raise RuntimeError("No signals matched JOINT_KEYWORDS; check SIGNAL_NAMES.")
+    drop_indices = [i for i in range(num_signals) if i not in set(keep_indices)]
+    print(f"  Joints kept (kw match): {len(keep_indices)} / {num_signals}")
+    print(f"  Joints excluded:        {len(drop_indices)} / {num_signals}")
 
-    X_sub, feat_idx = subset_feature_matrix(X_full, signal_indices, num_MPs)
-    feature_names_subset = [full_feature_names[i] for i in feat_idx]
-    print(f"  subset feature matrix: {X_sub.shape}  "
-          f"({len(signal_indices)} signals × {num_MPs} MPs)")
-
-    # ---------- Persist channel selection ----------
-    write_selected_channels_report(
-        out_path=out_dir / "selected_channels.txt",
-        signal_indices=signal_indices,
-        signal_names=SIGNAL_NAMES,
-        feature_names_subset=feature_names_subset,
-        num_MPs=num_MPs,
-        num_signals_total=num_signals,
-    )
-
-    # ---------- Run classifiers (supervised only) ----------
+    # ---------- Classifiers (shared across experiments) ----------
     classifier_specs = [
         {
             "key": "linear_svc",
@@ -292,37 +397,66 @@ def main() -> None:
         },
     ]
 
-    summary_rows = []
-    for spec in classifier_specs:
-        print(f"\n=== {spec['label']} ===")
-        row = run_supervised_only(
-            X=X_sub, y=y, clf=spec["model"],
-            clf_key=spec["key"], clf_label=spec["label"],
-            scale=spec["scale"],
-            feature_names=feature_names_subset,
-            out_dir=out_dir, seed=seed, cv_folds=5,
-        )
-        summary_rows.append(row)
+    # ---------- Three experiments ----------
+    # 1) Original: keep the 5 listed joints, all xyz, all MPs
+    # 2) Inverse:  EXCLUDE those 5 joints (= use everything else), all MPs
+    # 3) MP0-only: same 5 joints / all xyz, but only MP index 0 per channel
+    experiments = [
+        dict(
+            experiment_name="keep_5_joints_all_MPs",
+            description=(f"Keep only {list(JOINT_KEYWORDS)} (L+R, x/y/z) "
+                         f"with all {num_MPs} MPs per channel."),
+            signal_indices=keep_indices,
+            mp_indices=None,
+        ),
+        dict(
+            experiment_name="exclude_5_joints_all_MPs",
+            description=(f"Exclude {list(JOINT_KEYWORDS)} — use all OTHER "
+                         f"signals with all {num_MPs} MPs per channel."),
+            signal_indices=drop_indices,
+            mp_indices=None,
+        ),
+        dict(
+            experiment_name="keep_5_joints_MP0_only",
+            description=(f"Keep only {list(JOINT_KEYWORDS)} (L+R, x/y/z), "
+                         f"but only MP index 0 per channel."),
+            signal_indices=keep_indices,
+            mp_indices=[0],
+        ),
+    ]
 
-    # ---------- Summary table ----------
-    with open(out_dir / "subset_summary.txt", "w") as f:
-        f.write("Joint-subset classification summary\n")
-        f.write("=" * 78 + "\n")
-        f.write(f"Keywords:           {list(JOINT_KEYWORDS)}\n")
-        f.write(f"Signals selected:   {len(signal_indices)} / {num_signals}\n")
-        f.write(f"MPs per signal:     {num_MPs}\n")
-        f.write(f"Feature dim used:   {X_sub.shape[1]}\n\n")
-        f.write(f"{'Classifier':<18}{'Train acc':>12}{'Test acc':>12}"
-                f"{'CV mean':>12}{'CV std':>10}{'n_train':>10}{'n_test':>10}\n")
-        f.write("-" * 78 + "\n")
-        for s in summary_rows:
+    all_rows: List[dict] = []
+    for exp in experiments:
+        rows = run_experiment(
+            experiment_name=exp["experiment_name"],
+            description=exp["description"],
+            X_full=X_full, y=y,
+            signal_indices=exp["signal_indices"],
+            full_feature_names=full_feature_names,
+            num_signals=num_signals, num_MPs=num_MPs,
+            out_dir_root=out_dir,
+            classifier_specs=classifier_specs,
+            mp_indices=exp["mp_indices"],
+            seed=seed,
+        )
+        all_rows.extend(rows)
+
+    # ---------- Cross-experiment comparison table ----------
+    cmp_path = out_dir / "experiments_comparison.txt"
+    with open(cmp_path, "w") as f:
+        f.write("Joint-subset classification — cross-experiment comparison\n")
+        f.write("=" * 110 + "\n\n")
+        f.write(f"{'Experiment':<28}{'Classifier':<18}{'#feat':>7}"
+                f"{'Train':>10}{'Test':>10}{'CV mean':>11}{'CV std':>10}\n")
+        f.write("-" * 110 + "\n")
+        for s in all_rows:
             f.write(
-                f"{s['label']:<18}"
-                f"{s['train_acc']:>12.4f}{s['test_acc']:>12.4f}"
-                f"{s['cv_acc_mean']:>12.4f}{s['cv_acc_std']:>10.4f}"
-                f"{s['n_train']:>10d}{s['n_test']:>10d}\n"
+                f"{s['experiment']:<28}{s['label']:<18}"
+                f"{s['n_features']:>7d}"
+                f"{s['train_acc']:>10.4f}{s['test_acc']:>10.4f}"
+                f"{s['cv_acc_mean']:>11.4f}{s['cv_acc_std']:>10.4f}\n"
             )
-    print(f"\n  ✓ Wrote: {out_dir / 'subset_summary.txt'}")
+    print(f"\n  ✓ Wrote: {cmp_path}")
     print(f"\n✓ Done. Artifacts under: {out_dir}")
 
 

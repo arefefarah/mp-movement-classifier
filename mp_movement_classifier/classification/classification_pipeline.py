@@ -29,6 +29,58 @@ import matplotlib.pyplot as plt  # noqa: E402
 import seaborn as sns  # noqa: E402
 
 
+# Default location of the common motion-id ↔ name mapping JSON.
+# Resolved relative to this file so it works regardless of the caller's cwd.
+_DEFAULT_MOTION_MAPPING_PATH = (
+    Path(__file__).resolve().parents[2] / "data" / "common_motion_mapping.json"
+)
+
+
+def _load_motion_id_to_name(mapping_path: Optional[Path] = None) -> Dict[int, str]:
+    """
+    Load {motion_id: motion_name}. Returns {} on any failure so callers can
+    safely fall back to numeric labels.
+
+    Mirrors weights_analysis.load_motion_mapping but never raises and lives
+    inside the classification package to avoid a cross-package import.
+    """
+    import json
+    path = Path(mapping_path) if mapping_path is not None else _DEFAULT_MOTION_MAPPING_PATH
+    try:
+        with open(path, "r") as f:
+            data = json.load(f)
+        raw = data.get("mapping", data)  # {name: id}
+        return {int(v): str(k) for k, v in raw.items()}
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
+
+
+def _resolve_class_labels(
+        labels: Optional[List[str]],
+        id_to_name: Optional[Dict[int, str]] = None,
+) -> Optional[List[str]]:
+    """
+    If ``labels`` looks like a list of integers (or numeric strings) and a
+    motion-id → name mapping is available, return the corresponding names.
+    Otherwise return ``labels`` unchanged.
+    """
+    if labels is None:
+        return None
+    if id_to_name is None:
+        id_to_name = _load_motion_id_to_name()
+    if not id_to_name:
+        return labels
+    resolved: List[str] = []
+    for lbl in labels:
+        try:
+            key = int(lbl)
+        except (TypeError, ValueError):
+            resolved.append(str(lbl))
+            continue
+        resolved.append(id_to_name.get(key, str(lbl)))
+    return resolved
+
+
 def _row_normalized_confusion_matrix(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
     """Return confusion matrix normalized by true-class (rows sum to 1).
     If a row has zero support, it remains zeros (to avoid division by zero).
@@ -50,6 +102,11 @@ def _plot_confusion_matrix_percent(
 ) -> Path:
     cm_norm = _row_normalized_confusion_matrix(y_true, y_pred)
 
+    # Translate integer class IDs to human-readable motion names when possible.
+    # Falls back silently to whatever the caller passed if the mapping JSON is
+    # missing or labels aren't integer-like.
+    labels = _resolve_class_labels(labels)
+
     # ── 0.  Central font-size config ────────────────────────────────────────
     FONT = dict(
         annot=14,  # numbers inside each cell
@@ -58,7 +115,10 @@ def _plot_confusion_matrix_percent(
         title=16,  # "Confusion Matrix"
     )
 
-    fig, ax = plt.subplots(figsize=(9, 7))
+    # Bumped from (9, 7) so that the longer motion-name tick labels don't
+    # eat into the heatmap area — keeps cell size (and annotation font fit)
+    # the same as before names were resolved.
+    fig, ax = plt.subplots(figsize=(11.5, 9))
     annot = np.where(cm_norm == 0, "", cm_norm.round(2).astype(str))
 
     # ── 1.  Cell annotation font ─────────────────────────────────────────────
