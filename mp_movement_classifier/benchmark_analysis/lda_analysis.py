@@ -497,96 +497,96 @@ def compute_distributional_rdm(X, y, out_dir, method_name='Features'):
 
     return rdm_corr, rdm_eucl, classes
 
-
-# =============================================================================
-# Variance Decomposition (diagnoses why mean-RDM fails)
-# =============================================================================
-
-def analyze_variance_structure(X, y, out_dir, method_name='Features'):
-    """Between-class / within-class ratio in raw vs LDA space."""
-    out_dir = Path(out_dir) / 'variance_analysis'
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    classes = np.unique(y)
-    gm = X.mean(0)
-    N = X.shape[0]
-
-    Sb, Sw = 0.0, 0.0
-    for cls in classes:
-        Xc = X[y == cls]
-        cm = Xc.mean(0)
-        Sb += len(Xc) * np.sum((cm - gm) ** 2)
-        Sw += np.sum((Xc - cm) ** 2)
-    St = np.sum((X - gm) ** 2)
-    ratio_raw = Sb / Sw
-
-    # LDA space
-    Xs = StandardScaler().fit_transform(X)
-    lda = LinearDiscriminantAnalysis()
-    Xl = lda.fit_transform(Xs, y)
-    gm_l = Xl.mean(0)
-    Sb_l, Sw_l = 0.0, 0.0
-    for cls in classes:
-        Xc = Xl[y == cls]; cm = Xc.mean(0)
-        Sb_l += len(Xc) * np.sum((cm - gm_l) ** 2)
-        Sw_l += np.sum((Xc - cm) ** 2)
-    ratio_lda = Sb_l / Sw_l
-
-    print(f"\n  VARIANCE — {method_name}")
-    print(f"    Raw  B/W ratio: {ratio_raw:.4f}   (between/total = {Sb/St:.4f})")
-    print(f"    LDA  B/W ratio: {ratio_lda:.4f}")
-    print(f"    Improvement:    {ratio_lda/ratio_raw:.1f}×")
-
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-    labels = ['Between-class', 'Within-class']
-    for ax, vals, title in [
-        (axes[0], [Sb / St, Sw / St], f'Raw Space (B/W = {ratio_raw:.3f})'),
-        (axes[1], [Sb_l / (Sb_l+Sw_l), Sw_l / (Sb_l+Sw_l)], f'LDA Space (B/W = {ratio_lda:.1f})'),
-    ]:
-        ax.bar(labels, vals, color=['#2196F3', '#FF9800'], edgecolor='black', alpha=0.8)
-        ax.set_title(title, fontsize=13, fontweight='bold')
-        ax.set_ylabel('Proportion of Total Variance', fontweight='bold')
-        ax.set_ylim(0, 1); ax.grid(True, alpha=0.3)
-    fig.suptitle(f'Variance Decomposition — {method_name}\n'
-                 f'(explains low RDM values on averaged features)',
-                 fontsize=14, fontweight='bold')
-    plt.tight_layout()
-    plt.savefig(out_dir / 'variance_decomposition.png', dpi=300, bbox_inches='tight')
-    plt.close()
-
-    return {'raw_between': Sb, 'raw_within': Sw, 'raw_total': St, 'raw_ratio': ratio_raw,
-            'lda_between': Sb_l, 'lda_within': Sw_l, 'lda_ratio': ratio_lda}
+#
+# # =============================================================================
+# # Variance Decomposition (diagnoses why mean-RDM fails)
+# # =============================================================================
+#
+# def analyze_variance_structure(X, y, out_dir, method_name='Features'):
+#     """Between-class / within-class ratio in raw vs LDA space."""
+#     out_dir = Path(out_dir) / 'variance_analysis'
+#     out_dir.mkdir(parents=True, exist_ok=True)
+#
+#     classes = np.unique(y)
+#     gm = X.mean(0)
+#     N = X.shape[0]
+#
+#     Sb, Sw = 0.0, 0.0
+#     for cls in classes:
+#         Xc = X[y == cls]
+#         cm = Xc.mean(0)
+#         Sb += len(Xc) * np.sum((cm - gm) ** 2)
+#         Sw += np.sum((Xc - cm) ** 2)
+#     St = np.sum((X - gm) ** 2)
+#     ratio_raw = Sb / Sw
+#
+#     # LDA space
+#     Xs = StandardScaler().fit_transform(X)
+#     lda = LinearDiscriminantAnalysis()
+#     Xl = lda.fit_transform(Xs, y)
+#     gm_l = Xl.mean(0)
+#     Sb_l, Sw_l = 0.0, 0.0
+#     for cls in classes:
+#         Xc = Xl[y == cls]; cm = Xc.mean(0)
+#         Sb_l += len(Xc) * np.sum((cm - gm_l) ** 2)
+#         Sw_l += np.sum((Xc - cm) ** 2)
+#     ratio_lda = Sb_l / Sw_l
+#
+#     print(f"\n  VARIANCE — {method_name}")
+#     print(f"    Raw  B/W ratio: {ratio_raw:.4f}   (between/total = {Sb/St:.4f})")
+#     print(f"    LDA  B/W ratio: {ratio_lda:.4f}")
+#     print(f"    Improvement:    {ratio_lda/ratio_raw:.1f}×")
+#
+#     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+#     labels = ['Between-class', 'Within-class']
+#     for ax, vals, title in [
+#         (axes[0], [Sb / St, Sw / St], f'Raw Space (B/W = {ratio_raw:.3f})'),
+#         (axes[1], [Sb_l / (Sb_l+Sw_l), Sw_l / (Sb_l+Sw_l)], f'LDA Space (B/W = {ratio_lda:.1f})'),
+#     ]:
+#         ax.bar(labels, vals, color=['#2196F3', '#FF9800'], edgecolor='black', alpha=0.8)
+#         ax.set_title(title, fontsize=13, fontweight='bold')
+#         ax.set_ylabel('Proportion of Total Variance', fontweight='bold')
+#         ax.set_ylim(0, 1); ax.grid(True, alpha=0.3)
+#     fig.suptitle(f'Variance Decomposition — {method_name}\n'
+#                  f'(explains low RDM values on averaged features)',
+#                  fontsize=14, fontweight='bold')
+#     plt.tight_layout()
+#     plt.savefig(out_dir / 'variance_decomposition.png', dpi=300, bbox_inches='tight')
+#     plt.close()
+#
+#     return {'raw_between': Sb, 'raw_within': Sw, 'raw_total': St, 'raw_ratio': ratio_raw,
+#             'lda_between': Sb_l, 'lda_within': Sw_l, 'lda_ratio': ratio_lda}
 
 
 # =============================================================================
 # Hierarchical Clustering Dendrogram
 # =============================================================================
 
-def plot_hierarchical_clustering(X, y, out_dir, method_name='Features', space='lda'):
-    out_dir = Path(out_dir) / 'hierarchical_clustering'
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    classes = np.unique(y)
-    Xs = StandardScaler().fit_transform(X)
-
-    if space == 'lda':
-        Xp = LinearDiscriminantAnalysis().fit_transform(Xs, y)
-    else:
-        Xp = Xs
-
-    centroids = np.array([Xp[y == cls].mean(0) for cls in classes])
-    Z = linkage(centroids, method='ward')
-
-    fig, ax = plt.subplots(figsize=(max(12, len(classes) * 0.5), 8))
-    dendrogram(Z, labels=[str(c) for c in classes], ax=ax, leaf_rotation=45, leaf_font_size=9)
-    ax.set_ylabel('Ward Distance', fontweight='bold')
-    ax.set_title(f'Hierarchical Clustering ({space.upper()} space) — {method_name}',
-                 fontsize=14, fontweight='bold')
-    ax.grid(True, alpha=0.3, axis='y')
-    plt.tight_layout()
-    plt.savefig(out_dir / f'dendrogram_{space}.png', dpi=300, bbox_inches='tight')
-    plt.close()
-
+# def plot_hierarchical_clustering(X, y, out_dir, method_name='Features', space='lda'):
+#     out_dir = Path(out_dir) / 'hierarchical_clustering'
+#     out_dir.mkdir(parents=True, exist_ok=True)
+#
+#     classes = np.unique(y)
+#     Xs = StandardScaler().fit_transform(X)
+#
+#     if space == 'lda':
+#         Xp = LinearDiscriminantAnalysis().fit_transform(Xs, y)
+#     else:
+#         Xp = Xs
+#
+#     centroids = np.array([Xp[y == cls].mean(0) for cls in classes])
+#     Z = linkage(centroids, method='ward')
+#
+#     fig, ax = plt.subplots(figsize=(max(12, len(classes) * 0.5), 8))
+#     dendrogram(Z, labels=[str(c) for c in classes], ax=ax, leaf_rotation=45, leaf_font_size=9)
+#     ax.set_ylabel('Ward Distance', fontweight='bold')
+#     ax.set_title(f'Hierarchical Clustering ({space.upper()} space) — {method_name}',
+#                  fontsize=14, fontweight='bold')
+#     ax.grid(True, alpha=0.3, axis='y')
+#     plt.tight_layout()
+#     plt.savefig(out_dir / f'dendrogram_{space}.png', dpi=300, bbox_inches='tight')
+#     plt.close()
+#
 
 # =============================================================================
 # MASTER: Single-method analysis
@@ -627,9 +627,9 @@ def run_lda_analysis(X, y, out_dir, method_name='Features', feature_structure=No
     fdr, pvals = compute_fisher_ratios(X, y, out_dir, method_name, feature_structure)
     conf_rdm, conf_mat, _ = compute_confusion_rdm(X, y, out_dir, method_name)
     dist_corr, dist_eucl, _ = compute_distributional_rdm(X, y, out_dir, method_name)
-    var_res = analyze_variance_structure(X, y, out_dir, method_name)
-    plot_hierarchical_clustering(X, y, out_dir, method_name, 'lda')
-    plot_hierarchical_clustering(X, y, out_dir, method_name, 'raw')
+    # var_res = analyze_variance_structure(X, y, out_dir, method_name)
+    # plot_hierarchical_clustering(X, y, out_dir, method_name, 'lda')
+    # plot_hierarchical_clustering(X, y, out_dir, method_name, 'raw')
 
     print(f"\n{'=' * 70}")
     print(f"  DONE: {method_name} — outputs in {out_dir}")
@@ -643,7 +643,7 @@ def run_lda_analysis(X, y, out_dir, method_name='Features', feature_structure=No
         'confusion_rdm': conf_rdm,
         'distributional_rdm_corr': dist_corr,
         'distributional_rdm_eucl': dist_eucl,
-        'variance': var_res,
+        # 'variance': var_res,
     }
 
 
@@ -868,98 +868,98 @@ def compare_methods(methods, out_dir):
 # Usage Example
 # =============================================================================
 
-if __name__ == "__main__":
-    print("""
-    ╔═══════════════════════════════════════════════════════════════════════╗
-    ║  USAGE EXAMPLES                                                     ║
-    ╠═══════════════════════════════════════════════════════════════════════╣
-    ║                                                                     ║
-    ║  from movement_representation_analysis import (                     ║
-    ║      run_full_analysis, compare_methods                             ║
-    ║  )                                                                  ║
-    ║                                                                     ║
-    ║  # --- Per-method analysis ---                                      ║
-    ║                                                                     ║
-    ║  res_tmp = run_full_analysis(                                       ║
-    ║      X_tmp, y_tmp,                                                  ║
-    ║      out_dir='./results/tmp_analysis',                              ║
-    ║      method_name='TMP Weights',                                     ║
-    ║      feature_structure={                                            ║
-    ║          'n_signals': 51,                                           ║
-    ║          'n_features_per_signal': 5,                                ║
-    ║          'signal_label': 'Joint Coordinate',                        ║
-    ║          'feature_label': 'Primitive Weight',                       ║
-    ║      }                                                              ║
-    ║  )                                                                  ║
-    ║                                                                     ║
-    ║  res_leg = run_full_analysis(                                       ║
-    ║      X_leg, y_leg,                                                  ║
-    ║      out_dir='./results/legendre_analysis',                         ║
-    ║      method_name='Legendre Coefficients',                           ║
-    ║      feature_structure={                                            ║
-    ║          'n_signals': 51,                                           ║
-    ║          'n_features_per_signal': max_degree + 1,                   ║
-    ║          'signal_label': 'Joint Coordinate',                        ║
-    ║          'feature_label': 'Polynomial Degree',                      ║
-    ║      }                                                              ║
-    ║  )                                                                  ║
-    ║                                                                     ║
-    ║  res_ae = run_full_analysis(                                        ║
-    ║      X_ae, y_ae,                                                    ║
-    ║      out_dir='./results/autoencoder_analysis',                      ║
-    ║      method_name='Autoencoder Latent',                              ║
-    ║      feature_structure=None,  # latent dims have no structure       ║
-    ║  )                                                                  ║
-    ║                                                                     ║
-    ║  # --- Cross-method comparison ---                                  ║
-    ║                                                                     ║
-    ║  compare_methods(                                                   ║
-    ║      methods={                                                      ║
-    ║          'TMP Weights':           {'X': X_tmp, 'y': y_tmp},         ║
-    ║          'Legendre Coefficients': {'X': X_leg, 'y': y_leg},         ║
-    ║          'Autoencoder Latent':    {'X': X_ae,  'y': y_ae},          ║
-    ║      },                                                             ║
-    ║      out_dir='./results/method_comparison'                          ║
-    ║  )                                                                  ║
-    ╚═══════════════════════════════════════════════════════════════════════╝
-    """)
+# if __name__ == "__main__":
+    # print("""
+    # ╔═══════════════════════════════════════════════════════════════════════╗
+    # ║  USAGE EXAMPLES                                                     ║
+    # ╠═══════════════════════════════════════════════════════════════════════╣
+    # ║                                                                     ║
+    # ║  from movement_representation_analysis import (                     ║
+    # ║      run_full_analysis, compare_methods                             ║
+    # ║  )                                                                  ║
+    # ║                                                                     ║
+    # ║  # --- Per-method analysis ---                                      ║
+    # ║                                                                     ║
+    # ║  res_tmp = run_full_analysis(                                       ║
+    # ║      X_tmp, y_tmp,                                                  ║
+    # ║      out_dir='./results/tmp_analysis',                              ║
+    # ║      method_name='TMP Weights',                                     ║
+    # ║      feature_structure={                                            ║
+    # ║          'n_signals': 51,                                           ║
+    # ║          'n_features_per_signal': 5,                                ║
+    # ║          'signal_label': 'Joint Coordinate',                        ║
+    # ║          'feature_label': 'Primitive Weight',                       ║
+    # ║      }                                                              ║
+    # ║  )                                                                  ║
+    # ║                                                                     ║
+    # ║  res_leg = run_full_analysis(                                       ║
+    # ║      X_leg, y_leg,                                                  ║
+    # ║      out_dir='./results/legendre_analysis',                         ║
+    # ║      method_name='Legendre Coefficients',                           ║
+    # ║      feature_structure={                                            ║
+    # ║          'n_signals': 51,                                           ║
+    # ║          'n_features_per_signal': max_degree + 1,                   ║
+    # ║          'signal_label': 'Joint Coordinate',                        ║
+    # ║          'feature_label': 'Polynomial Degree',                      ║
+    # ║      }                                                              ║
+    # ║  )                                                                  ║
+    # ║                                                                     ║
+    # ║  res_ae = run_full_analysis(                                        ║
+    # ║      X_ae, y_ae,                                                    ║
+    # ║      out_dir='./results/autoencoder_analysis',                      ║
+    # ║      method_name='Autoencoder Latent',                              ║
+    # ║      feature_structure=None,  # latent dims have no structure       ║
+    # ║  )                                                                  ║
+    # ║                                                                     ║
+    # ║  # --- Cross-method comparison ---                                  ║
+    # ║                                                                     ║
+    # ║  compare_methods(                                                   ║
+    # ║      methods={                                                      ║
+    # ║          'TMP Weights':           {'X': X_tmp, 'y': y_tmp},         ║
+    # ║          'Legendre Coefficients': {'X': X_leg, 'y': y_leg},         ║
+    # ║          'Autoencoder Latent':    {'X': X_ae,  'y': y_ae},          ║
+    # ║      },                                                             ║
+    # ║      out_dir='./results/method_comparison'                          ║
+    # ║  )                                                                  ║
+    # ╚═══════════════════════════════════════════════════════════════════════╝
+    # """)
 
     # --- Quick demo with synthetic data ---
-    np.random.seed(42)
-    n_per_class, n_classes = 80, 12
-
-    def _make_data(n_features, separation=0.3, noise=2.0):
-        X, y = [], []
-        for c in range(n_classes):
-            shift = np.random.randn(n_features) * separation
-            X.append(np.random.randn(n_per_class, n_features) * noise + shift)
-            y.extend([c] * n_per_class)
-        return np.vstack(X), np.array(y)
-
-    X_tmp, y_tmp = _make_data(255, separation=0.5)   # 51 joints × 5 primitives
-    X_leg, y_leg = _make_data(102, separation=0.3)    # 51 joints × 2 coefficients
-    X_ae, y_ae   = _make_data(64,  separation=0.4)    # 64 latent dims
-
-    print("Running per-method analyses...")
-    run_full_analysis(X_tmp, y_tmp, '/tmp/demo/tmp',
-                      method_name='TMP Weights',
-                      feature_structure={'n_signals': 51, 'n_features_per_signal': 5,
-                                         'signal_label': 'Joint', 'feature_label': 'Primitive'})
-
-    run_full_analysis(X_leg, y_leg, '/tmp/demo/legendre',
-                      method_name='Legendre Coefficients',
-                      feature_structure={'n_signals': 51, 'n_features_per_signal': 2,
-                                         'signal_label': 'Joint', 'feature_label': 'Degree'})
-
-    run_full_analysis(X_ae, y_ae, '/tmp/demo/autoencoder',
-                      method_name='Autoencoder Latent')
-
-    print("\nRunning cross-method comparison...")
-    compare_methods(
-        methods={
-            'TMP Weights':           {'X': X_tmp, 'y': y_tmp},
-            'Legendre Coefficients': {'X': X_leg, 'y': y_leg},
-            'Autoencoder Latent':    {'X': X_ae,  'y': y_ae},
-        },
-        out_dir='/tmp/demo/comparison'
-    )
+    # np.random.seed(42)
+    # n_per_class, n_classes = 80, 12
+    #
+    # def _make_data(n_features, separation=0.3, noise=2.0):
+    #     X, y = [], []
+    #     for c in range(n_classes):
+    #         shift = np.random.randn(n_features) * separation
+    #         X.append(np.random.randn(n_per_class, n_features) * noise + shift)
+    #         y.extend([c] * n_per_class)
+    #     return np.vstack(X), np.array(y)
+    #
+    # X_tmp, y_tmp = _make_data(255, separation=0.5)   # 51 joints × 5 primitives
+    # X_leg, y_leg = _make_data(102, separation=0.3)    # 51 joints × 2 coefficients
+    # X_ae, y_ae   = _make_data(64,  separation=0.4)    # 64 latent dims
+    #
+    # print("Running per-method analyses...")
+    # run_full_analysis(X_tmp, y_tmp, '/tmp/demo/tmp',
+    #                   method_name='TMP Weights',
+    #                   feature_structure={'n_signals': 51, 'n_features_per_signal': 5,
+    #                                      'signal_label': 'Joint', 'feature_label': 'Primitive'})
+    #
+    # run_full_analysis(X_leg, y_leg, '/tmp/demo/legendre',
+    #                   method_name='Legendre Coefficients',
+    #                   feature_structure={'n_signals': 51, 'n_features_per_signal': 2,
+    #                                      'signal_label': 'Joint', 'feature_label': 'Degree'})
+    #
+    # run_full_analysis(X_ae, y_ae, '/tmp/demo/autoencoder',
+    #                   method_name='Autoencoder Latent')
+    #
+    # print("\nRunning cross-method comparison...")
+    # compare_methods(
+    #     methods={
+    #         'TMP Weights':           {'X': X_tmp, 'y': y_tmp},
+    #         'Legendre Coefficients': {'X': X_leg, 'y': y_leg},
+    #         'Autoencoder Latent':    {'X': X_ae,  'y': y_ae},
+    #     },
+    #     out_dir='/tmp/demo/comparison'
+    # )

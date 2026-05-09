@@ -221,6 +221,7 @@ def optimize_max_degree(processed_segments, motion_ids, degree_range, out_dir):
 
     # Plot results
     plot_optimization_results(results, out_dir, best_degree)
+    plot_cv_with_train(results, out_dir, best_degree)
 
     return results
 
@@ -250,6 +251,52 @@ def save_results_to_file(results, out_dir, best_degree, best_accuracy):
                     f"{results['cv_stds'][i]:<12.4f}\n")
 
     print(f"\nResults saved to: {results_file}")
+
+
+def plot_cv_with_train(results, out_dir, best_degree):
+    """
+    Standalone CV-performance figure (paper version).
+
+    Single-panel summary of degree sweep: train accuracy, test accuracy,
+    and 5-fold CV (mean ± std) overlaid on one axes. Styled to match
+    ``posture_removal_experiment._plot_main_comparison`` so the two figures
+    sit consistently in the paper. Saved as both PNG and SVG.
+    """
+    degrees = results['degrees']
+
+    fig, ax = plt.subplots(figsize=(7.0, 4.0))
+
+    ax.plot(degrees, results['train_accuracies'],
+            marker='o', linestyle='-', lw=1.5, ms=5,
+            label='Train Accuracy', color='#1E88E5', zorder=5)
+    ax.plot(degrees, results['test_accuracies'],
+            marker='^', linestyle='-', lw=1.5, ms=5,
+            label='Test Accuracy', color='#E53935', zorder=5)
+    ax.errorbar(degrees, results['cv_means'], yerr=results['cv_stds'],
+                fmt='s-', lw=1.5, ms=5, capsize=3,
+                label='CV Mean ± Std', color='#8E24AA', zorder=5)
+    ax.axvline(x=best_degree, color='#43A047', linestyle='--',
+               lw=1.8, alpha=0.8, label=f'Best: {best_degree}', zorder=4)
+
+    ax.set_xlabel('Max Degree', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Accuracy', fontsize=12, fontweight='bold')
+    ax.set_title('Cross-Validation Performance', fontsize=12, fontweight='bold')
+    ax.set_xticks(degrees)
+    ax.tick_params(axis='both', labelsize=11)
+    ax.grid(True, alpha=0.3)
+    # Legend inside the axes; lower-right tends to be empty since accuracy
+    # curves rise and plateau on the left half of the degree sweep.
+    ax.legend(fontsize=10, loc='lower right', frameon=True,
+              framealpha=0.9, borderaxespad=0.6)
+
+    plt.tight_layout()
+    save_path = out_dir / 'legendre_cv_with_train.png'
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.savefig(save_path.with_suffix('.svg'),
+                bbox_inches='tight', facecolor='white')
+    plt.close()
+    print(f"  ✓ Saved: {save_path}")
+    print(f"  ✓ Saved: {save_path.with_suffix('.svg')}")
 
 
 def plot_optimization_results(results, out_dir, best_degree):
@@ -335,6 +382,8 @@ def plot_optimization_results(results, out_dir, best_degree):
     # Save figure
     save_path = out_dir / 'legendre_degree_optimization.png'
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.savefig(save_path.with_suffix('.svg'), bbox_inches='tight', facecolor='white')
+    print(f"  ✓ Saved: {save_path}")
     plt.close()
 
     print(f"Optimization plot saved to: {save_path}")
