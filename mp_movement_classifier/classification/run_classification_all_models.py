@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from collections import defaultdict
 from pathlib import Path
 from typing import List, Tuple
 
@@ -175,6 +176,171 @@ def _plot_combined_pca_figure(explained_by_model: dict,
     return out_path
 
 
+def _plot_combined_lda_figure(explained_by_model: dict,
+                               out_dir: Path,
+                               upto_bars: int = 10,
+                               upto_cum: int | None = None) -> Path:
+    """
+    Mirror of :func:`_plot_combined_pca_figure` for LDA explained-variance
+    ratios. Takes a dict ``{'TMP': evr, 'AE': evr, 'Legendre': evr}`` of
+    per-discriminant explained-variance arrays (from
+    ``lda.explained_variance_ratio_``) and produces a two-panel figure
+    (per-component bars on the left, cumulative curve on the right) with
+    identical styling to the PCA combined figure.
+    """
+    from matplotlib.ticker import FormatStrFormatter, MaxNLocator
+
+    colors = {'TMP': '#1f77b4', 'AE': '#ff7f0e', 'Legendre': '#2ca02c'}
+    model_order = [m for m in ['TMP', 'AE', 'Legendre'] if m in explained_by_model]
+    if not model_order:
+        model_order = list(explained_by_model.keys())
+
+    visible = [m for m in model_order
+               if explained_by_model.get(m) is not None and len(explained_by_model[m]) > 0]
+    if not visible:
+        raise ValueError("No non-empty LDA explained variance arrays provided")
+
+    def _pc_at(r, thr):
+        c = np.cumsum(np.asarray(r, dtype=float))
+        idx = np.where(c >= thr)[0]
+        return int(idx[0] + 1) if len(idx) else None
+
+    # Same local rcParams as PCA → consistent paper look.
+    rc_local = {
+        'font.size': 8, 'axes.labelsize': 8, 'axes.titlesize': 9,
+        'xtick.labelsize': 7, 'ytick.labelsize': 7, 'legend.fontsize': 7,
+        'axes.linewidth': 0.6,
+        'xtick.major.width': 0.6, 'ytick.major.width': 0.6,
+    }
+    with plt.rc_context(rc_local):
+        fig, (ax1, ax2) = plt.subplots(
+            1, 2, figsize=(7.2, 2.6),
+            gridspec_kw={'width_ratios': [0.85, 1.15], 'wspace': 0.28}
+        )
+
+        # ---------- (a) per-discriminant bars ----------
+        n = len(visible)
+        gw, bw = 0.9, 0.9 / n
+        offs = np.linspace(-gw / 2 + bw / 2, gw / 2 - bw / 2, n)
+        x = np.arange(1, upto_bars + 1)
+        for i, name in enumerate(visible):
+            r = np.asarray(explained_by_model[name], dtype=float)
+            y = np.zeros(upto_bars)
+            k = min(upto_bars, len(r))
+            y[:k] = r[:k]
+            ax1.bar(x + offs[i], y, width=bw, color=colors.get(name),
+                    edgecolor='black', linewidth=0.3, label=name)
+
+        ax1.set_xlabel('Linear discriminant')
+        ax1.set_ylabel('Explained variance')
+        ax1.set_xlim(0.4, upto_bars + 0.6)
+        ax1.set_xticks(x)
+        ax1.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+        ax1.grid(True, axis='y', alpha=0.3, linewidth=0.4)
+        ax1.set_axisbelow(True)
+        ax1.legend(frameon=False, loc='upper right', handlelength=1.2)
+        ax1.text(-0.14, 1.02, 'a', transform=ax1.transAxes,
+                 fontsize=10, fontweight='bold', va='bottom')
+
+        # ---------- (b) cumulative, capped at upto_cum ----------
+        actual_max = max(len(explained_by_model[name]) for name in visible)
+        max_len = actual_max if upto_cum is None else min(upto_cum, actual_max)
+
+        # Pre-compute each method's 90% crossing so we can lateral-jitter the
+        # vertical line + crossing marker when two methods share the same k90
+        # (otherwise the later-painted method completely hides the earlier one).
+        k90_by_name = {name: _pc_at(np.asarray(explained_by_model[name], dtype=float), 0.90)
+                       for name in visible}
+        # Group by k90 value to detect ties.
+        ties = defaultdict(list)
+        for name in visible:
+            k = k90_by_name[name]
+            if k is not None:
+                ties[k].append(name)
+        # Per-name horizontal offset (in data units along the discriminant axis).
+        jitter = {}
+        for k, names_at_k in ties.items():
+            n_here = len(names_at_k)
+            if n_here == 1:
+                jitter[names_at_k[0]] = 0.0
+            else:
+                # Symmetric offsets, e.g. 2 ties → ±0.10, 3 ties → -0.16, 0, +0.16.
+                step = 0.16 if n_here >= 3 else 0.10
+                offsets = np.linspace(-step * (n_here - 1) / 2,
+                                      step * (n_here - 1) / 2, n_here)
+                for nm, off in zip(names_at_k, offsets):
+                    jitter[nm] = float(off)
+
+        crossings = []
+        for name in visible:
+            r = np.asarray(explained_by_model[name], dtype=float)
+            k_cap = min(max_len, len(r))
+            cum = np.cumsum(r[:k_cap])
+            xs = np.arange(1, k_cap + 1)
+            ax2.plot(xs, cum, color=colors.get(name), linewidth=1.2, label=name)
+            m = min(10, k_cap)
+            ax2.plot(xs[:m], cum[:m], 'o', color=colors.get(name), markersize=2.2)
+            k90 = k90_by_name[name]
+            if k90 is not None and k90 <= max_len:
+                crossings.append((name, k90))
+                # Marker sits on the curve at (k90, cum[k90-1]) — i.e. the
+                # actual cumulative value where this method first reaches
+                # ≥ 90% — so each method's crossing is visually anchored to
+                # its own line, not to the abstract y=0.9 threshold.
+                full_cum = np.cumsum(np.asarray(explained_by_model[name], dtype=float))
+                y_cross = float(full_cum[k90 - 1])
+                x_jit = k90 + jitter.get(name, 0.0)
+                ax2.plot([x_jit, x_jit], [0, y_cross], color=colors.get(name),
+                         linewidth=0.6, linestyle=':', alpha=0.7)
+                ax2.plot(x_jit, y_cross, 'o', color=colors.get(name), markersize=4,
+                         markeredgecolor='black', markeredgewidth=0.4, zorder=5)
+            elif k90 is not None:
+                crossings.append((name, k90))
+
+        for thr, ls, lbl in [(0.90, '--', '90%'), (0.95, ':', '95%')]:
+            ax2.axhline(thr, color='gray', linestyle=ls, linewidth=0.6, alpha=0.8)
+            ax2.text(max_len * 1.01, thr, lbl, fontsize=6, color='gray', va='center')
+
+        if crossings:
+            lines = [r'$n$ for 90% variance:'] + [f'  {nm}: {k}' for nm, k in crossings]
+            ax2.text(0.97, 0.05, '\n'.join(lines),
+                     transform=ax2.transAxes, fontsize=7, color='0.15',
+                     ha='right', va='bottom',
+                     bbox=dict(boxstyle='round,pad=0.35', facecolor='white',
+                               edgecolor='0.7', linewidth=0.4, alpha=0.95))
+
+        ax2.set_xlabel('Number of discriminants')
+        ax2.set_ylabel('Cumulative explained variance')
+        ax2.set_xlim(0.5, max_len + 0.5)
+        ax2.set_ylim(0, 1.02)
+        ax2.xaxis.set_major_locator(MaxNLocator(integer=True, nbins=6))
+        ax2.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+        ax2.grid(True, alpha=0.3, linewidth=0.4)
+        ax2.set_axisbelow(True)
+        ax2.text(-0.12, 1.02, 'b', transform=ax2.transAxes,
+                 fontsize=10, fontweight='bold', va='bottom')
+
+        _ensure_dir(out_dir)
+        out_path = out_dir / 'lda_variance_combined.png'
+        fig.savefig(out_path, dpi=300, bbox_inches='tight', facecolor='white')
+        fig.savefig(out_path.with_suffix('.svg'), bbox_inches='tight', facecolor='white')
+        plt.close(fig)
+
+    return out_path
+
+
+def _extract_lda_evr(method_results):
+    """
+    Pull ``lda.explained_variance_ratio_`` out of a classification-pipeline
+    result dict. Returns ``None`` if LDA didn't run or the structure isn't
+    what we expect (lets the caller skip a method gracefully).
+    """
+    try:
+        return method_results['lda']['lda']['lda'].explained_variance_ratio_
+    except (KeyError, TypeError, AttributeError):
+        return None
+
+
 def _run_tmp(data_dir: str, tmp_model_dir: str, seed: int,
              primary_classifier: str):
     print("[TMP] Loading data and model...")
@@ -215,7 +381,8 @@ def _run_tmp(data_dir: str, tmp_model_dir: str, seed: int,
         primary_classifier=primary_classifier,
         run_all_classifiers=True,
         seed=seed,
-        cv_folds=5, perform_cv=True
+        cv_folds=5, perform_cv=True,
+        lda_method_name='TMP Weights',
     )
     print(f"[TMP] Done. Artifacts: {out_dir}")
     return results, X, y
@@ -311,7 +478,8 @@ def _run_ae(data_dir: str, ae_model_path: str, ae_out_dir: str | None, seed: int
         primary_classifier=primary_classifier,
         run_all_classifiers=True,
         seed=seed,
-        cv_folds=5, perform_cv=True
+        cv_folds=5, perform_cv=True,
+        lda_method_name='Autoencoder Latent',
     )
     print(f"[AE] Done. Artifacts: {cls_out_dir}")
     return results, X_latent, y_latent
@@ -348,7 +516,8 @@ def _run_legendre(data_dir: str, legendre_out_dir: str | None, seed: int,
         primary_classifier=primary_classifier,
         run_all_classifiers=True,
         seed=seed,
-        cv_folds=5, perform_cv=True
+        cv_folds=5, perform_cv=True,
+        lda_method_name='Legendre Coefficients',
     )
     print(f"[Legendre] Done. Artifacts: {cls_out_dir}")
     return results, X, y
@@ -704,6 +873,7 @@ def main() -> None:
     # Store PCA data for combined plots, full results for CV comparison,
     # and (X, y) pairs needed for AIC comparison.
     explained_by_model = {}
+    lda_evr_by_model = {}
     results_by_model = {}
     X_by_model = {}  # model_key -> (X, y) for AIC computation
 
@@ -720,6 +890,9 @@ def main() -> None:
         X_by_model['tmp'] = (tmp_X, tmp_y)
         if tmp_results and 'pca' in tmp_results:
             explained_by_model['TMP'] = tmp_results['pca'].get('explained_variance_ratio', None)
+        tmp_lda_evr = _extract_lda_evr(tmp_results) if tmp_results else None
+        if tmp_lda_evr is not None:
+            lda_evr_by_model['TMP'] = tmp_lda_evr
 
     if 'ae' in args.models:
         if not args.ae_model_path:
@@ -736,6 +909,9 @@ def main() -> None:
         X_by_model['ae'] = (ae_X, ae_y)
         if ae_results and 'pca' in ae_results:
             explained_by_model['AE'] = ae_results['pca'].get('explained_variance_ratio', None)
+        ae_lda_evr = _extract_lda_evr(ae_results) if ae_results else None
+        if ae_lda_evr is not None:
+            lda_evr_by_model['AE'] = ae_lda_evr
 
     if 'legendre' in args.models:
         leg_results, leg_X, leg_y = _run_legendre(
@@ -748,6 +924,9 @@ def main() -> None:
         X_by_model['legendre'] = (leg_X, leg_y)
         if leg_results and 'pca' in leg_results:
             explained_by_model['Legendre'] = leg_results['pca'].get('explained_variance_ratio', None)
+        leg_lda_evr = _extract_lda_evr(leg_results) if leg_results else None
+        if leg_lda_evr is not None:
+            lda_evr_by_model['Legendre'] = leg_lda_evr
 
     # Determine combined output directory
     if args.combined_out_dir:
@@ -763,6 +942,13 @@ def main() -> None:
 
     else:
         print("[Combined] Skipped PCA plots: no PCA outputs available from selected models.")
+
+    # Create combined LDA explained-variance plots (same layout as PCA)
+    if lda_evr_by_model:
+        out_path_lda = _plot_combined_lda_figure(lda_evr_by_model, combined_dir)
+        print(f"[Combined] LDA combined figure: {out_path_lda}")
+    else:
+        print("[Combined] Skipped LDA plots: no LDA outputs available from selected models.")
 
     # Create cross-validation comparison
     if results_by_model:

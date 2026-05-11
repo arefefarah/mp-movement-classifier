@@ -729,7 +729,8 @@ def main():
         fixed_cm_vmin=0.0,
         fixed_cm_vmax=1.0,
         seed=42,
-        cv_folds=5,perform_cv= True
+        cv_folds=5, perform_cv=True,
+        lda_method_name='Autoencoder Latent',
     )
 
     print("\n" + "=" * 80)

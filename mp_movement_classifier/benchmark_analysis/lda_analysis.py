@@ -55,6 +55,19 @@ from sklearn.svm import LinearSVC
 matplotlib.use('Agg')
 
 
+def _save_png_svg(path):
+    """
+    Save the current matplotlib figure as both PNG (300 dpi) and SVG so the
+    same image can be used for screen previews and vector-based paper
+    figures. ``path`` may be a str or Path with either suffix.
+    """
+    p = Path(path)
+    png = p.with_suffix('.png')
+    svg = p.with_suffix('.svg')
+    plt.savefig(png, dpi=300, bbox_inches='tight')
+    plt.savefig(svg, bbox_inches='tight', facecolor='white')
+
+
 # =============================================================================
 # CORE: LDA Analysis (method-agnostic)
 # =============================================================================
@@ -76,7 +89,12 @@ def perform_lda_analysis(X, y, out_dir, method_name='Features', n_components=Non
     -------
     dict with lda model, projections, centroids, distances, cv scores
     """
-    out_dir = Path(out_dir) / 'lda_analysis'
+    # Save scatter / distribution / heatmap figures next to the other
+    # analyses produced by ``run_lda_analysis`` (mahalanobis, fisher,
+    # confusion RDM, distributional RDM). The orchestrator already passes
+    # a method-specific directory, so nesting another ``lda_analysis``
+    # folder here only created an awkward double-subdir layout.
+    out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     classes = np.unique(y)
@@ -135,24 +153,47 @@ def _cmap_for(n):
 
 
 def _plot_lda_2d(r, d):
-    X_lda, y, classes, lda, mn = r['X_lda'], r['y'], r['classes'], r['lda'], r['method_name']
-    fig, ax = plt.subplots(figsize=(12, 10))
-    colors = _cmap_for(len(classes))(np.linspace(0, 1, len(classes)))
-    for i, cls in enumerate(classes):
-        m = y == cls
-        ax.scatter(X_lda[m, 0], X_lda[m, 1], c=[colors[i]], alpha=0.5, s=40, label=f'{cls}')
-        cx, cy = X_lda[m, 0].mean(), X_lda[m, 1].mean()
-        ax.scatter(cx, cy, c=[colors[i]], s=250, marker='X', edgecolors='black', linewidths=2, zorder=5)
-        ax.annotate(str(cls), (cx, cy), fontsize=9, fontweight='bold', ha='center', va='bottom',
-                    xytext=(0, 8), textcoords='offset points')
+    """
+    LD1 vs LD2 scatter, styled to match
+    ``classification.utils.analyze_feature_pca``'s ``pca_scatter`` so the
+    two figures sit next to each other cleanly in the manuscript.
+
+    Matches:
+      - ``figsize=(3.8, 3.4)``
+      - ``hsv`` colormap discretized by ``n_classes``
+      - per-class scatter loop with ``s=14, alpha=0.8, linewidths=0``
+      - axis label format ``f'LD1 ({evr:.2f})'`` (decimal, two places)
+      - title fontsize 13 bold, axis labels fontsize 11, ticks fontsize 10
+      - no inline legend (paired with the separate ``motion_legend.png``)
+    """
+    from matplotlib import cm
+    try:
+        from mp_movement_classifier.classification.utils import MOTION_NAMES
+    except Exception:
+        MOTION_NAMES = {}
+
+    X_lda, y, classes, lda = r['X_lda'], r['y'], r['classes'], r['lda']
+
+    n_classes = len(classes)
+    cmap = cm.get_cmap('hsv', n_classes)
+    colors = [cmap(i) for i in range(n_classes)]
+    class_names = {c: MOTION_NAMES.get(int(c), str(c)) for c in classes}
+
+    fig, ax = plt.subplots(figsize=(3.8, 3.4))
+    for i, c in enumerate(classes):
+        mask = (y == c)
+        ax.scatter(X_lda[mask, 0], X_lda[mask, 1],
+                   s=14, alpha=0.8, color=colors[i],
+                   label=class_names[c], linewidths=0)
+
     evr = lda.explained_variance_ratio_
-    ax.set_xlabel(f'LD1 ({evr[0]:.1%} between-class var)', fontsize=12, fontweight='bold')
-    ax.set_ylabel(f'LD2 ({evr[1]:.1%} between-class var)', fontsize=12, fontweight='bold')
-    ax.set_title(f'LDA Projection — {mn}', fontsize=14, fontweight='bold')
-    ax.grid(True, alpha=0.3, linestyle='--')
-    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8, ncol=2, title='Motion ID')
+    ax.set_xlabel(f'LD1 ({evr[0]:.2f})', fontsize=11)
+    ax.set_ylabel(f'LD2 ({evr[1]:.2f})', fontsize=11)
+    ax.set_title('LDA of Features', fontsize=13, fontweight='bold')
+    ax.tick_params(axis='both', labelsize=10)
+    ax.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig(d / 'lda_2d_scatter.png', dpi=300, bbox_inches='tight')
+    _save_png_svg(d / 'lda_2d_scatter.png')
     plt.close()
 
 
@@ -171,7 +212,7 @@ def _plot_lda_3d(r, d):
     ax.set_title(f'LDA 3D — {mn}', fontsize=13, fontweight='bold')
     ax.legend(fontsize=7, ncol=3)
     plt.tight_layout()
-    plt.savefig(d / 'lda_3d_scatter.png', dpi=300, bbox_inches='tight')
+    _save_png_svg(d / 'lda_3d_scatter.png')
     plt.close()
 
 
@@ -194,7 +235,7 @@ def _plot_lda_explained_variance(r, d):
     a2.set_title(f'Cumulative — {mn}', fontweight='bold')
     a2.grid(True, alpha=0.3); a2.legend()
     plt.tight_layout()
-    plt.savefig(d / 'lda_explained_variance.png', dpi=300, bbox_inches='tight')
+    _save_png_svg(d / 'lda_explained_variance.png')
     plt.close()
 
 
@@ -213,7 +254,7 @@ def _plot_lda_centroid_rdm(r, d):
     ax.set_title(f'RDM (LDA Centroid Distance) — {mn}', fontsize=14, fontweight='bold')
     ax.set_xlabel('Motion ID', fontweight='bold'); ax.set_ylabel('Motion ID', fontweight='bold')
     plt.tight_layout()
-    plt.savefig(d / 'lda_centroid_rdm.png', dpi=300, bbox_inches='tight')
+    _save_png_svg(d / 'lda_centroid_rdm.png')
     plt.close()
 
 
@@ -233,7 +274,7 @@ def _plot_lda_class_separation(r, d):
         ax.set_title(f'LD{idx+1} Distributions — {mn}', fontweight='bold')
         ax.grid(True, alpha=0.3); ax.tick_params(axis='x', rotation=45)
     plt.tight_layout()
-    plt.savefig(d / 'lda_class_distributions.png', dpi=300, bbox_inches='tight')
+    _save_png_svg(d / 'lda_class_distributions.png')
     plt.close()
 
 
@@ -248,7 +289,7 @@ def _plot_lda_scalings_heatmap(r, d):
     ax.set_ylabel('Feature Index', fontweight='bold')
     ax.set_title(f'LDA Scalings — {mn}', fontweight='bold')
     plt.tight_layout()
-    plt.savefig(d / 'lda_scalings_heatmap.png', dpi=300, bbox_inches='tight')
+    _save_png_svg(d / 'lda_scalings_heatmap.png')
     plt.close()
 
 
@@ -306,7 +347,7 @@ def compute_mahalanobis_rdm(X, y, out_dir, method_name='Features'):
     ax.set_title(f'Mahalanobis RDM — {method_name}', fontsize=13, fontweight='bold')
     ax.set_xlabel('Motion ID', fontweight='bold'); ax.set_ylabel('Motion ID', fontweight='bold')
     plt.tight_layout()
-    plt.savefig(out_dir / 'mahalanobis_rdm.png', dpi=300, bbox_inches='tight')
+    _save_png_svg(out_dir / 'mahalanobis_rdm.png')
     plt.close()
 
     return dist, classes
@@ -353,13 +394,16 @@ def compute_fisher_ratios(X, y, out_dir, method_name='Features', feature_structu
     ax.set_title(f'Feature Discriminability — {method_name}', fontsize=13, fontweight='bold')
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig(out_dir / 'fisher_ratio_bar.png', dpi=300, bbox_inches='tight')
+    _save_png_svg(out_dir / 'fisher_ratio_bar.png')
     plt.close()
 
-    # Heatmap if structure known
-    if feature_structure is not None:
-        n_sig = feature_structure['n_signals']
-        n_fpersig = feature_structure['n_features_per_signal']
+    # Heatmap if structure known. We only need the signal × feature layout —
+    # autoencoder latents pass ``feature_structure={'n_features': D}`` which
+    # has neither key, so skip the heatmap gracefully instead of crashing
+    # the whole LDA pipeline.
+    n_sig = feature_structure.get('n_signals') if feature_structure else None
+    n_fpersig = feature_structure.get('n_features_per_signal') if feature_structure else None
+    if n_sig is not None and n_fpersig is not None:
         sig_label = feature_structure.get('signal_label', 'Signal')
         feat_label = feature_structure.get('feature_label', 'Feature Index')
 
@@ -374,7 +418,7 @@ def compute_fisher_ratios(X, y, out_dir, method_name='Features', feature_structu
             ax.set_ylabel(sig_label, fontweight='bold')
             ax.set_title(f'Fisher Ratio Heatmap — {method_name}', fontsize=13, fontweight='bold')
             plt.tight_layout()
-            plt.savefig(out_dir / 'fisher_ratio_heatmap.png', dpi=300, bbox_inches='tight')
+            _save_png_svg(out_dir / 'fisher_ratio_heatmap.png')
             plt.close()
 
     # ANOVA
@@ -392,7 +436,7 @@ def compute_fisher_ratios(X, y, out_dir, method_name='Features', feature_structu
     ax.set_title(f'ANOVA per Feature — {method_name}', fontsize=13, fontweight='bold')
     ax.legend(); ax.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig(out_dir / 'anova_pvalues.png', dpi=300, bbox_inches='tight')
+    _save_png_svg(out_dir / 'anova_pvalues.png')
     plt.close()
 
     return fdr, p_values
@@ -445,7 +489,7 @@ def compute_confusion_rdm(X, y, out_dir, method_name='Features', n_repeats=10):
     axes[1].set_title(f'Confusion-Based RDM — {method_name}', fontsize=13, fontweight='bold')
 
     plt.tight_layout()
-    plt.savefig(out_dir / 'confusion_based_rdm.png', dpi=300, bbox_inches='tight')
+    _save_png_svg(out_dir / 'confusion_based_rdm.png')
     plt.close()
 
     return dissimilarity, cm_avg, classes
@@ -492,7 +536,7 @@ def compute_distributional_rdm(X, y, out_dir, method_name='Features'):
         ax.set_yticklabels(classes, fontsize=7)
         ax.set_title(f'{title} Distributional RDM — {method_name}', fontsize=12, fontweight='bold')
     plt.tight_layout()
-    plt.savefig(out_dir / 'distributional_rdm.png', dpi=300, bbox_inches='tight')
+    _save_png_svg(out_dir / 'distributional_rdm.png')
     plt.close()
 
     return rdm_corr, rdm_eucl, classes

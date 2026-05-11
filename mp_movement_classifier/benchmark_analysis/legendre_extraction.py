@@ -749,8 +749,9 @@ def main():
         primary_classifier='linear_svc',
         fixed_cm_vmin=0.0,
         fixed_cm_vmax=1.0,
-        seed=42,cv_folds=5,
-        perform_cv=True
+        seed=42, cv_folds=5,
+        perform_cv=True,
+        lda_method_name='Legendre Coefficients',
     )
 
     figures = plot_coefficient_distributions(

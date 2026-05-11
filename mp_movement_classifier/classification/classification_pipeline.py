@@ -339,6 +339,8 @@ def run_classification_pipeline(
         seed: int = 42,
         cv_folds: int = 5,
         perform_cv: bool = True,
+        run_lda: bool = True,
+        lda_method_name: str = 'Features',
 ) -> Dict[str, Any]:
     """
     Enhanced classification pipeline with support for multiple classifiers.
@@ -372,6 +374,28 @@ def run_classification_pipeline(
 
     rdm_info = calculate_rdm(X=X, y=y, out_dir=out_dir)
 
+    # 1b) LDA-based representation analysis (scatter, Mahalanobis RDM,
+    #     Fisher ratios, confusion RDM, distributional RDM).
+    # Each call site (TMP / Legendre / Autoencoder) gets its own
+    # ``lda_analysis`` subfolder beside the rest of its classification
+    # artifacts. Skip with run_lda=False if you want to disable it.
+    lda_results: Optional[Dict[str, Any]] = None
+    if run_lda:
+        try:
+            from mp_movement_classifier.benchmark_analysis.lda_analysis import (
+                run_lda_analysis,
+            )
+            lda_results = run_lda_analysis(
+                X=X, y=y,
+                out_dir=out_dir / 'lda_analysis',
+                method_name=lda_method_name,
+                feature_structure=feature_structure,
+            )
+        except Exception as e:
+            # Don't let an LDA-side failure (e.g. singular within-class
+            # scatter for a tiny class) break the rest of the pipeline.
+            print(f"[warning] LDA analysis skipped: {e}")
+
     # 2) Train/test split and scaling
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.25, random_state=seed, stratify=y
@@ -388,6 +412,7 @@ def run_classification_pipeline(
         'pca': pca_info,
         'tsne': tsne_model,
         'rdm': rdm_info,
+        'lda': lda_results,
         'train_indices': None,  # not returned from sklearn directly
         'test_indices': None,
     }
