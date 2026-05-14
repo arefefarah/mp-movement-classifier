@@ -280,7 +280,7 @@ def weights_barplot_across_channels(weights, motion_ids, motion_names_dict=None,
         print(f"Saved: {filename}")
 
 
-def weights_barplot_mp1_subset_channels(
+def mean_weights_barplot_mp1_subset_channels(
         weights,
         motion_ids,
         motion_names_dict=None,
@@ -292,13 +292,6 @@ def weights_barplot_mp1_subset_channels(
     """
     Bar plot of one MP coefficient (default MP1 = ``mp_idx=0``) across a
     chosen *subset* of channels, grouped by movement.
-
-    Same look-and-feel as ``weights_barplot_across_channels`` (colors per
-    motion-id, motion-label boxes above the bars, gray separator lines,
-    legend on the right) — but the x-axis groups are **channels** instead
-    of movements, and only one MP per channel-movement is shown. Lets the
-    reader compare the distribution of a single primitive across a small
-    set of channels at a glance.
 
     Parameters
     ----------
@@ -358,11 +351,6 @@ def weights_barplot_mp1_subset_channels(
     ]
     color_map = {m: fixed_colors[i % len(fixed_colors)]
                  for i, m in enumerate(unique_motions)}
-
-    # ----- Build bars: for each MOVEMENT, one bar per channel -----
-    # Mirrors weights_barplot_across_channels exactly, just swapping the role
-    # of the "inner" axis: there it's MPs of one channel, here it's channels
-    # of one MP. All bars in a movement-group share that movement's color.
 
     # Width is fixed (paper column constraint); height is back to standard
     # since the movement labels above the bars have been removed.
@@ -460,11 +448,6 @@ def weights_barplot_mp1_subset_channels(
         for i, m in enumerate(unique_motions)
     ]
 
-    # Both legends sit BELOW the plot, side-by-side. Removing the right-side
-    # legend lets the bar area expand into that horizontal space, making the
-    # bars look bigger. Channel-index legend on the left, movement legend on
-    # the right.
-
     # Channel-index legend: 3 columns (≈ 3 entries per column for 7 channels).
     leg_idx = ax.legend(
         handles=index_handles,
@@ -503,6 +486,184 @@ def weights_barplot_mp1_subset_channels(
     print(f"Saved: {fname}")
     return fname
 
+
+
+def median_weights_barplot_mp1_subset_channels(
+        weights,
+        motion_ids,
+        motion_names_dict=None,
+        channel_names=("LWrist_Zpos", "RWrist_Zpos", "Neck_Zpos","RElbow_Ypos",
+                       "LElbow_Ypos"),mp_idx=0,save_dir='./plots'):
+
+    from pathlib import Path
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from matplotlib.patches import Patch
+
+    Path(save_dir).mkdir(parents=True, exist_ok=True)
+
+    # ----- Resolve channel names -> indices (case-insensitive, suffix-tolerant) -----
+    def _resolve(name: str) -> int:
+        # Accept "LWrist_z" or "LWrist_Zpos" (any case).
+        n = name.strip().lower()
+        for idx, cname in enumerate(CHANNEL_NAMES):
+            cl = cname.lower()
+            if cl == n or cl == n + "pos":
+                return idx
+        raise ValueError(
+            f"Channel '{name}' not found in CHANNEL_NAMES "
+            f"(expected one of e.g. 'LWrist_Zpos')."
+        )
+
+    channel_idxs = [_resolve(c) for c in channel_names]
+    channel_labels = [CHANNEL_NAMES[i] for i in channel_idxs]
+    n_channels = len(channel_idxs)
+
+    if mp_idx < 0 or mp_idx >= weights.shape[2]:
+        raise ValueError(f"mp_idx={mp_idx} out of range [0, {weights.shape[2]}).")
+
+    # ----- Motions (sorted) + readable labels -----
+    unique_motions = np.unique(motion_ids)
+    n_motions = len(unique_motions)
+    if motion_names_dict:
+        motion_labels = [motion_names_dict.get(m, f'Motion {m}') for m in unique_motions]
+    else:
+        motion_labels = [f'Motion {m}' for m in unique_motions]
+
+    # ----- Color map (same palette as weights_barplot_across_channels) -----
+    fixed_colors = [
+        '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+        '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
+        '#aec7e8', '#ffbb78', '#98df8a', '#ff9896', '#c5b0d5',
+    ]
+    color_map = {m: fixed_colors[i % len(fixed_colors)]
+                 for i, m in enumerate(unique_motions)}
+
+    # Width is fixed (paper column constraint); height is back to standard
+    # since the movement labels above the bars have been removed.
+    fig, ax = plt.subplots(figsize=(18, 8))
+
+    # Shorter, paper-friendly form for the legend (e.g. "LWrist_Zpos" -> "LWrist_z").
+    def _short(name: str) -> str:
+        n = name
+        for suf, axis in (("_Xpos", "_x"), ("_Ypos", "_y"), ("_Zpos", "_z")):
+            if n.endswith(suf):
+                return n[:-len(suf)] + axis
+        return n
+
+    short_channel_labels = [_short(c) for c in channel_labels]
+
+    med_vals, std_vals = [], []
+    x_positions, bar_colors, x_labels = [], [], []
+
+    current_x = 0
+    for m in unique_motions:
+        mask = motion_ids == m
+        motion_color = color_map[m]
+        for ch_pos, ch_idx in enumerate(channel_idxs):
+            vals = weights[mask, ch_idx, mp_idx]
+            med_vals.append(np.median(vals, axis=0))
+            # std_vals.append(vals.std())
+            x_positions.append(current_x)
+            bar_colors.append(motion_color)
+            x_labels.append(str(ch_pos + 1))
+            current_x += 1
+        current_x += 1  # gap between movement groups
+
+    ax.bar(x_positions, med_vals,
+           # yerr=std_vals,
+           capsize=4,
+           color=bar_colors, alpha=0.75,
+           edgecolor='black', linewidth=0.5,
+           width=0.95)  # near-touching within a group → fewer wasted gaps
+
+    # ----- X-axis: short index under each bar (no name crowding) -----
+    # All font sizes in this figure are bumped ~1.5× so it scales down
+    # cleanly into a paper column without becoming illegible.
+    ax.set_xticks(x_positions)
+    # X-tick font matches the y-tick font for visual consistency.
+    ax.set_xticklabels(x_labels, fontsize=14, rotation=0, ha='center')
+    ax.set_xlabel('Channel index (grouped by movement)',
+                  fontsize=20, fontweight='bold')
+    ax.tick_params(axis='y', labelsize=14)
+    # Trim the empty space at the left/right of the plot so the bars fill
+    # the full axes width.
+    ax.set_xlim(x_positions[0] - 0.6, x_positions[-1] + 0.6)
+    ax.margins(x=0)
+
+    # ----- Vertical separators between movement groups -----
+    group_size = n_channels + 1  # bars + gap
+    for k in range(1, n_motions):
+        ax.axvline(x=k * group_size - 1, color='gray',
+                   linestyle='--', linewidth=1.5, alpha=0.5)
+
+    y_min, y_max = ax.get_ylim()
+    y_range = y_max - y_min
+
+    ax.set_ylabel(f'Average Weight ± Std (MP{mp_idx + 1})',
+                  fontsize=20, fontweight='bold')
+    ax.ticklabel_format(axis='y', style='sci', scilimits=(0, 0),
+                        useMathText=True)
+    ax.yaxis.get_offset_text().set_fontsize(13)
+    # No movement-label strip above bars, so the standard small title pad
+    # is enough.
+    ax.set_title(
+        f'Median of MP{mp_idx + 1} Weight Distribution: '
+        f'{len(channel_idxs)} channels × {n_motions} movements',
+        fontsize=22, fontweight='bold', pad=20,
+    )
+
+    # ----- Two legends on the right: channel index ↔ name, and movement ↔ color.
+    # Use invisible proxies for the index legend so we get a clean text-only
+    # mapping (no color swatches — index isn't a color, just a position).
+    from matplotlib.lines import Line2D
+    index_handles = [
+        Line2D([0], [0], marker='', linestyle='',
+               label=f'{i + 1}: {short_channel_labels[i]}')
+        for i in range(n_channels)
+    ]
+    motion_handles = [
+        Patch(facecolor=color_map[m], alpha=0.75,
+              edgecolor='black', label=motion_labels[i])
+        for i, m in enumerate(unique_motions)
+    ]
+    # Channel-index legend: 3 columns (≈ 3 entries per column for 7 channels).
+    leg_idx = ax.legend(
+        handles=index_handles,
+        loc='upper left', bbox_to_anchor=(0.0, -0.12),
+        ncol=3,
+        fontsize=15, framealpha=0.9,
+        title='Channel index', title_fontsize=16,
+        borderaxespad=0, handlelength=0, handletextpad=0,
+        columnspacing=1.2,
+    )
+    ax.add_artist(leg_idx)
+
+    # Movement-color legend: 4×4 grid for 16 movements.
+    ax.legend(
+        handles=motion_handles,
+        loc='upper right', bbox_to_anchor=(1.0, -0.12),
+        ncol=4,
+        fontsize=15, framealpha=0.9,
+        title='Movements', title_fontsize=16,
+        borderaxespad=0, columnspacing=1.5, handletextpad=0.6,
+    )
+
+    ax.grid(axis='y', alpha=0.3, linestyle='--', linewidth=0.7)
+    ax.set_axisbelow(True)
+    ax.axhline(y=0, color='black', linewidth=0.8, linestyle='-')
+    # No label strip above the bars now; small headroom is enough.
+    ax.set_ylim(y_min, y_max + y_range * 0.1)
+
+    plt.tight_layout()
+    fname = (f"{save_dir}/median_MP{mp_idx + 1}_subset_"
+             f"{'_'.join(channel_labels)}.png")
+    plt.savefig(fname, dpi=200, bbox_inches='tight', facecolor='white')
+    plt.savefig(fname.replace('.png', '.svg'),
+                bbox_inches='tight', facecolor='white')
+    plt.close()
+    print(f"Saved: {fname}")
+    return fname
 
 def vis_median_weights_movements(weights, motion_ids, motion_names_dict=None,save_dir='./plots'):
 
@@ -717,9 +878,17 @@ def main():
 
     # MP1 across a curated subset of channels (one figure)
     save_dir_mp1 = os.path.join(output_dir, "mp1_subset_channels")
-    weights_barplot_mp1_subset_channels(
+    mean_weights_barplot_mp1_subset_channels(
         weights, segment_motion_ids, motion_id_to_name,
-        channel_names=("Neck_Zpos", "LWrist_Zpos", "RWrist_Zpos","LAnkle_Zpos","LAnkle_Ypos","RElbow_Ypos",
+        channel_names=("Neck_Zpos", "LWrist_Zpos", "RWrist_Zpos","RElbow_Ypos",
+                       "LElbow_Ypos"),
+        mp_idx=0,
+        save_dir=save_dir_mp1,
+    )
+
+    median_weights_barplot_mp1_subset_channels(
+        weights, segment_motion_ids, motion_id_to_name,
+        channel_names=("Neck_Zpos", "LWrist_Zpos", "RWrist_Zpos", "RElbow_Ypos",
                        "LElbow_Ypos"),
         mp_idx=0,
         save_dir=save_dir_mp1,

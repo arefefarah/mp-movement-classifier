@@ -309,6 +309,7 @@ def visualize_with_tsne(X, y, out_dir):
                    s=14, alpha=0.8, color=colors[i],
                    label=class_names[c], linewidths=0)
 
+    # f'PC1 ({pca.explained_variance_ratio_[0]:.2f})'
     ax.set_xlabel('t-SNE 1', fontsize=11)
     ax.set_ylabel('t-SNE 2', fontsize=11)
     ax.set_title('t-SNE of Features', fontsize=13, fontweight='bold')
