@@ -76,7 +76,7 @@ def compute_joint_speed(motion_data, joints, frame_time, wrist_joints=['LeftWris
 
 def reconstruct_from_model(method_name , model_dir,joint_names,motion_name,desired_length,
                            root_translation, offsets, parents):
-    if method_name == "legandre_position" or method_name == "legandre_exponential":
+    if method_name == "legandre_position":
         model_dir = os.path.join(model_dir, "legandre_analysis")
         avg_weights_path = os.path.join(model_dir, "averaged_weights")
     else:
@@ -88,7 +88,7 @@ def reconstruct_from_model(method_name , model_dir,joint_names,motion_name,desir
     avg_weights_data.close()
     if method_name == "tmp_position":
         reconstructed = reconstruct_segments_with_avg_weights(
-            model_path=os.path.join(model_dir, f"mp_model_5_PC_tpoints_30"),
+            model_path=os.path.join(model_dir, f"mp_model_5_PC_tpoints_35"),
             avg_weights=avg_weights,
             segment_length=desired_length
         )
@@ -103,48 +103,6 @@ def reconstruct_from_model(method_name , model_dir,joint_names,motion_name,desir
         reconstructed = avg_coefficients @ basis.T
         pos = reconstructed.T.reshape(-1, len(joint_names), 3)
         return reconstructed, pos
-
-    elif method_name == "legandre_exponential":
-        avg_coefficients = avg_weights
-        t = np.linspace(0, 1, desired_length)
-        max_degree = 1
-        basis = generate_legendre_basis(max_degree, t)  # (time_steps, max_degree+1)
-        reconstructed = avg_coefficients @ basis.T
-
-    elif method_name == "tmp_exponential_map":
-        # first xonstrcut in exponential  map
-        reconstructed = reconstruct_segments_with_avg_weights(
-            model_path=os.path.join(model_dir, f"mp_model_5_PC_tpoints_30"),
-            avg_weights=avg_weights,
-            segment_length=desired_length
-        )
-    axis_angles = reconstructed.T.reshape(-1, len(joint_names), 3)
-    T_recon = axis_angles.shape[0]
-    n_joints = axis_angles.shape[1]
-    rotmats = np.zeros((T_recon, n_joints, 3, 3))
-    for t in range(T_recon):
-        for j in range(n_joints):
-            angle = np.linalg.norm(axis_angles[t, j])
-            if angle < 1e-8:
-                rotmats[t, j] = np.eye(3)
-            else:
-                rotmats[t, j] = R.from_rotvec(axis_angles[t, j]).as_matrix()
-
-    root_pos = root_translation
-    offsets = np.array(offsets)  # (n_joints, 3)
-    parents = np.array(parents)
-    positions = np.zeros((T_recon, n_joints, 3))
-
-    for t in range(T_recon):
-        for j in range(n_joints):
-            if parents[j] == -1:
-                # Root joint
-                positions[t, j] = root_pos[t]
-            else:
-                # Child: parent_position + parent_global_rotation @ bone_offset
-                p = parents[j]
-                positions[t, j] = positions[t, p] + rotmats[t, p] @ offsets[j]
-    return reconstructed,positions
 
 def get_pos_info(filename):
     bvh_reference = f"../../data/bvh_files/{filename}.bvh"
@@ -162,9 +120,7 @@ def main():
         'Spine', 'Thorax', 'Neck',
         'LShoulder', 'LElbow', 'LWrist', 'RShoulder', 'RElbow', 'RWrist'
     ]
-    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_pymotion_position_mp_model_5_phase_two")
-    # model_dir = os.path.join("./../../results/tmp_configs",
-    #                          f"new_seg_exponential_mp_model_5_tpoints_30_phase_two")
+    model_dir = os.path.join("./../../results/tmp_configs", f"new_seg_mp_model_5_phase_three")
     output_path = os.path.join(model_dir, "reconstruction")
     Path(output_path).mkdir(exist_ok=True)
     MAPPING_FILE = "../../data/common_motion_mapping.json"
@@ -175,11 +131,11 @@ def main():
     id_to_motion_name = {id_val: motion_name for motion_name, id_val in motion_mapping.items()}
 
     motions_to_visualize = [
-        "subject_16_motion_02", "subject_9_motion_05", "subject_59_motion_18", "subject_12_motion_17",
-        "subject_2_motion_11","subject_28_motion_09", "subject_23_motion_08", "subject_21_motion_03",
-        "subject_32_motion_00","subject_70_motion_06","subject_15_motion_01", "subject_60_motion_12",
-        "subject_33_motion_00", "subject_13_motion_07","subject_17_motion_13", "subject_75_motion_10",
-        "subject_19_motion_14"
+        "subject_16_motion_02", "subject_9_motion_05","subject_59_motion_18", "subject_12_motion_17",
+        # "subject_2_motion_11","subject_28_motion_09", "subject_23_motion_08", "subject_21_motion_03",
+        # "subject_32_motion_00","subject_70_motion_06","subject_15_motion_01", "subject_60_motion_12",
+        # "subject_33_motion_00", "subject_13_motion_07","subject_17_motion_13", "subject_75_motion_10",
+        # "subject_19_motion_14"
     ]
     for filename in motions_to_visualize:
 
@@ -189,10 +145,10 @@ def main():
         motion_name = id_to_motion_name.get(int(motion_id_str))
 
         ### here we want to replace pos with recontructed values
-        # "legandre_position" ,"legandre_exponential", "tmp_exponential_map" , "tmp_position"
+        # "legandre_position" ,"tmp_position"
         method_name = "tmp_position"
         reconstructed, pos = reconstruct_from_model(method_name, model_dir, joint_names,motion_name=motion_name,
-                                                    desired_length=50,
+                                                    desired_length=100,
                                                     root_translation = global_positions,parents = parents,offsets = offsets)
 
         output = os.path.join(output_path, f"recon_from_{method_name}_segment_motion_{motion_name}.npy")

@@ -1158,9 +1158,16 @@ def load_model_with_full_state(filename, num_segments=None, num_signals=None):
     model.K = saved_data["K"]
     model.invK = saved_data["invK"]
     
-    # Restore resampling matrices with correct numeric keys
+    # Restore resampling matrices with correct numeric keys.
+    # ``save_model_with_full_state`` writes them as numpy arrays (via
+    # ``v.detach().numpy()``), but ``predict_one_segment`` later uses them in
+    # ``torch.tensordot`` and only newly-computed entries are torch tensors.
+    # Re-wrap on load so loaded models work end-to-end without the caller
+    # having to remember this asymmetry.
     model.resampling_matrix = {}
     for k_str, v in saved_data["resampling_matrix"].items():
+        if isinstance(v, np.ndarray):
+            v = torch.tensor(v)
         model.resampling_matrix[int(k_str)] = v
     
     model.learn_curve = saved_data["learn_curve"]

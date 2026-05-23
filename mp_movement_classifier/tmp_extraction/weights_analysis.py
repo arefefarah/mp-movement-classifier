@@ -880,7 +880,7 @@ def main():
     save_dir_mp1 = os.path.join(output_dir, "mp1_subset_channels")
     mean_weights_barplot_mp1_subset_channels(
         weights, segment_motion_ids, motion_id_to_name,
-        channel_names=("Neck_Zpos", "LWrist_Zpos", "RWrist_Zpos","RElbow_Ypos",
+        channel_names=("Neck_Zpos", "LWrist_Zpos", "RWrist_Zpos",  "LAnkle_Zpos","RAnkle_Zpos","RElbow_Ypos",
                        "LElbow_Ypos"),
         mp_idx=0,
         save_dir=save_dir_mp1,
@@ -888,7 +888,7 @@ def main():
 
     median_weights_barplot_mp1_subset_channels(
         weights, segment_motion_ids, motion_id_to_name,
-        channel_names=("Neck_Zpos", "LWrist_Zpos", "RWrist_Zpos", "RElbow_Ypos",
+        channel_names=("Neck_Zpos", "LWrist_Zpos", "RWrist_Zpos",  "LAnkle_Zpos","RAnkle_Zpos","RElbow_Ypos",
                        "LElbow_Ypos"),
         mp_idx=0,
         save_dir=save_dir_mp1,
