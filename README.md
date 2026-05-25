@@ -49,7 +49,7 @@ python run_classification_all_models.py \
   --tmp-model-dir ../../results/tmp_configs/new_seg_mp_model_5_phase_three \
   --ae-model-path ../../results/tmp_configs/new_seg_mp_model_5_phase_three/autoencoder_analysis/models/best_autoencoder.pt \
   --legendre-out-dir  ../../results/tmp_configs/new_seg_mp_model_5_phase_three/legendre_analysis \
-  --primary-classifier linear_svc --rf 0 --seed 42
+  --primary-classifier random_forest --seed 42
 ```
 Notes:
 - To disable the secondary RandomForest run, pass `--rf 0`.

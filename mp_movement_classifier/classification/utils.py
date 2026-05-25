@@ -167,20 +167,50 @@ def analyze_feature_pca(
     out_dir: Path,
     max_components: int = None,
     feature_names: list = None,
+    normalize: bool = True,
 ):
     """
     Perform PCA analysis on features X and create several plots:
     - 2D scatter (PC1 vs PC2) colored by y
     - Variance explained bar + cumulative curves
     - Optional feature loadings heatmap if feature_names provided
+
+    Parameters
+    ----------
+    normalize : bool, default True
+        If True, apply ``StandardScaler`` (zero mean, unit variance per
+        feature) to X before fitting PCA. This is the standard preprocessing
+        for PCA when features have heterogeneous scales (e.g. TMP weights
+        from different MPs, or Legendre coefficients of different degrees)
+        and prevents large-variance features from dominating the principal
+        components purely because of their numerical range.
+
+        Important: scaling is applied *only inside this function*. The
+        caller's ``X`` is left untouched, so downstream pipeline steps
+        (t-SNE, RDM, LDA, classification) continue to see the original
+        un-normalised features. To compare against the un-normalised PCA,
+        call this twice with ``normalize=True`` / ``normalize=False`` and
+        point ``out_dir`` at different directories.
+
     Returns a dict with PCA model and arrays (e.g., transformed data, explained variance ratios).
+    The returned ``scaler`` is the fitted ``StandardScaler`` when
+    ``normalize=True``, otherwise ``None``.
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    n_components = min(max_components or X.shape[1], X.shape[1])
+    # Optionally standardize features before PCA. We work on a local copy so
+    # nothing about the caller's X is mutated.
+    if normalize:
+        scaler = StandardScaler()
+        X_for_pca = scaler.fit_transform(X)
+    else:
+        scaler = None
+        X_for_pca = X
+
+    n_components = min(max_components or X_for_pca.shape[1], X_for_pca.shape[1])
     pca = PCA(n_components=n_components)
-    X_pca = pca.fit_transform(X)
+    X_pca = pca.fit_transform(X_for_pca)
 
     # --- categorical legend setup (move imports/dict to top of file if reused) ---
 
@@ -271,6 +301,8 @@ def analyze_feature_pca(
         'X_pca': X_pca,
         'explained_variance_ratio': pca.explained_variance_ratio_,
         'cumulative_variance': np.cumsum(pca.explained_variance_ratio_),
+        'scaler': scaler,           # fitted StandardScaler when normalize=True, else None
+        'normalized': normalize,    # explicit flag so plotting consumers can label appropriately
     }
 
 

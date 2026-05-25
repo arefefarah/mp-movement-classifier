@@ -321,6 +321,19 @@ STRATEGY_COLORS = {
     "Autoencoder": "#ff7f0e",
 }
 
+# All text in the reconstruction figures uses these sizes (in points).
+# Minimum is 8 so labels remain legible after the figures are scaled down
+# into the two-column manuscript layout. Kept in one place so any future
+# adjustment is a single-line change.
+FONT = dict(
+    tick=9,        # x/y tick labels
+    label=10,      # axis labels (xlabel / ylabel)
+    title=11,      # subplot/figure titles
+    legend=9,      # legend body
+    annot=8,       # in-axes secondary text
+    suptitle=12,   # figure-level title (only used in trajectory overlay)
+)
+
 
 def _save_png_svg(path: Path) -> None:
     p = Path(path)
@@ -351,9 +364,9 @@ def plot_summary_bars(summary: pd.DataFrame, save_dir: Path) -> None:
         ax.bar(x, means, yerr=stds, capsize=4, color=colors,
                edgecolor="black", linewidth=0.5, alpha=0.85)
         ax.set_xticks(x)
-        ax.set_xticklabels(strategies, fontsize=10)
-        ax.set_title(title, fontsize=11, fontweight="bold")
-        ax.tick_params(axis="y", labelsize=9)
+        ax.set_xticklabels(strategies, fontsize=FONT["tick"])
+        ax.set_title(title, fontsize=FONT["title"], fontweight="bold")
+        ax.tick_params(axis="y", labelsize=FONT["tick"])
         ax.grid(axis="y", alpha=0.3, linewidth=0.5)
         ax.set_axisbelow(True)
 
@@ -439,13 +452,14 @@ def plot_per_class_bars(
             bar_positions.append((s, float(xp), float(cv)))
 
     ax.set_xticks(x)
-    ax.set_xticklabels(motion_order, rotation=45, ha="right", fontsize=9)
-    ax.set_ylabel(ylabel, fontsize=11, fontweight="bold")
-    ax.set_title(title, fontsize=12, fontweight="bold")
-    ax.tick_params(axis="y", labelsize=9)
+    ax.set_xticklabels(motion_order, rotation=45, ha="right",
+                       fontsize=FONT["tick"])
+    ax.set_ylabel(ylabel, fontsize=FONT["label"], fontweight="bold")
+    ax.set_title(title, fontsize=FONT["title"], fontweight="bold")
+    ax.tick_params(axis="y", labelsize=FONT["tick"])
     ax.grid(axis="y", alpha=0.3, linewidth=0.5)
     ax.set_axisbelow(True)
-    ax.legend(fontsize=9, frameon=True, framealpha=0.9, loc="best")
+    ax.legend(fontsize=FONT["legend"], frameon=True, framealpha=0.9, loc="best")
 
     if ylim is not None:
         ax.set_ylim(*ylim)
@@ -465,7 +479,7 @@ def plot_per_class_bars(
                     xy=(xp, lo + span * 0.02),
                     xytext=(xp, lo + span * 0.02),
                     ha="center", va="bottom",
-                    fontsize=7, color=STRATEGY_COLORS.get(s, "black"),
+                    fontsize=FONT["annot"], color=STRATEGY_COLORS.get(s, "black"),
                     fontweight="bold",
                     bbox=dict(boxstyle="round,pad=0.15",
                               facecolor="white", edgecolor="0.7",
@@ -478,7 +492,7 @@ def plot_per_class_bars(
                     xy=(xp, hi - span * 0.02),
                     xytext=(xp, hi - span * 0.02),
                     ha="center", va="top",
-                    fontsize=7, color=STRATEGY_COLORS.get(s, "black"),
+                    fontsize=FONT["annot"], color=STRATEGY_COLORS.get(s, "black"),
                     fontweight="bold",
                     bbox=dict(boxstyle="round,pad=0.15",
                               facecolor="white", edgecolor="0.7",
@@ -493,7 +507,7 @@ def plot_per_class_bars(
             0.01, 0.97,
             "▼ off-scale (clipped — see CSV for raw value)",
             transform=ax.transAxes, ha="left", va="top",
-            fontsize=7, color="0.30", style="italic",
+            fontsize=FONT["annot"], color="0.30", style="italic",
             bbox=dict(boxstyle="round,pad=0.25",
                       facecolor="white", edgecolor="0.7",
                       linewidth=0.4, alpha=0.9),
@@ -564,22 +578,23 @@ def plot_trajectory_overlay(
                     ax.plot(time, rec[ch], color=STRATEGY_COLORS.get(strat, "gray"),
                             lw=1.0, alpha=0.85, label=strat)
                 if col == 0:
-                    ax.set_ylabel(f"{axis_labels[axis_idx]}", fontsize=10,
-                                  fontweight="bold")
+                    ax.set_ylabel(f"{axis_labels[axis_idx]}",
+                                  fontsize=FONT["label"], fontweight="bold")
                 if axis_idx == 0:
-                    ax.set_title(j_name, fontsize=10, fontweight="bold")
+                    ax.set_title(j_name, fontsize=FONT["title"],
+                                 fontweight="bold")
                 if axis_idx == 2:
-                    ax.set_xlabel("Frame", fontsize=9)
-                ax.tick_params(axis="both", labelsize=8)
+                    ax.set_xlabel("Frame", fontsize=FONT["label"])
+                ax.tick_params(axis="both", labelsize=FONT["tick"])
                 ax.grid(True, alpha=0.3, linewidth=0.4)
 
         # Single legend for the whole figure
         handles, labels = axes[0, 0].get_legend_handles_labels()
         fig.legend(handles, labels, loc="upper center",
                    bbox_to_anchor=(0.5, 1.02), ncol=len(handles),
-                   frameon=False, fontsize=10)
+                   frameon=False, fontsize=FONT["legend"])
         fig.suptitle(f"Reconstruction vs. real — {motion_name}",
-                     fontsize=12, fontweight="bold", y=1.05)
+                     fontsize=FONT["suptitle"], fontweight="bold", y=1.05)
         fig.tight_layout()
         _save_png_svg(save_dir / f"trajectory_overlay_{motion_name}")
         plt.close(fig)

@@ -364,7 +364,8 @@ def run_classification_pipeline(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # 1) Optional unsupervised analyses (PCA, t-SNE, RDM) for interpretability
-    pca_info = analyze_feature_pca(X=X, y=y, out_dir=out_dir, feature_names=feature_names)
+    # pca_info = analyze_feature_pca(X=X, y=y, out_dir=out_dir, feature_names=feature_names)
+    pca_info = analyze_feature_pca(X, y, out_dir, normalize=False, feature_names=feature_names)
     tsne_model = visualize_with_tsne(X=X, y=y, out_dir=out_dir)
     save_motion_legend(
         out_path=Path(out_dir) / 'motion_legend.png',

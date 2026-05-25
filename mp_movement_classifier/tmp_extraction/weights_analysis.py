@@ -484,6 +484,136 @@ def mean_weights_barplot_mp1_subset_channels(
                 bbox_inches='tight', facecolor='white')
     plt.close()
     print(f"Saved: {fname}")
+
+    # =========================================================================
+    # SECOND FIGURE — Deviation from global per-channel mean
+    # =========================================================================
+    # For each channel ``c`` we compute the *global* MP-coefficient mean across
+    # ALL segments of ALL motions (a single scalar per channel). Then for each
+    # (motion, channel) we plot the deviation:
+    #     bar height = mean_{seg in motion}(w_seg) - global_mean
+    #     error bar  = std_{seg in motion}(w_seg)
+    # (std is invariant under a constant subtraction, so the error bars are
+    # identical to the first figure — only the bar heights change.)
+    #
+    # This makes motion-specific *signatures* visually obvious: bars above
+    # zero = this motion has stronger MP coefficient than the dataset average
+    # on this channel; below zero = weaker. Saved alongside the original so
+    # you can compare both views without re-running.
+    # =========================================================================
+
+    # ----- Global per-channel reference (one scalar per chosen channel) -----
+    global_means = np.array(
+        [weights[:, ch_idx, mp_idx].mean() for ch_idx in channel_idxs],
+        dtype=float,
+    )
+
+    # ----- Build deviation bars in the same x-layout as the first figure -----
+    dev_vals: list = []
+    dev_std_vals: list = []
+    x_positions_d, bar_colors_d, x_labels_d = [], [], []
+
+    current_x = 0
+    for m in unique_motions:
+        mask = motion_ids == m
+        motion_color = color_map[m]
+        for ch_pos, ch_idx in enumerate(channel_idxs):
+            seg_vals = weights[mask, ch_idx, mp_idx]
+            dev_vals.append(seg_vals.mean() - global_means[ch_pos])
+            dev_std_vals.append(seg_vals.std())  # std is unchanged by subtraction
+            x_positions_d.append(current_x)
+            bar_colors_d.append(motion_color)
+            x_labels_d.append(str(ch_pos + 1))
+            current_x += 1
+        current_x += 1  # gap between movement groups
+
+    fig, ax = plt.subplots(figsize=(18, 8))
+
+    ax.bar(x_positions_d, dev_vals,
+           yerr=dev_std_vals, capsize=4,
+           color=bar_colors_d, alpha=0.75,
+           edgecolor='black', linewidth=0.5,
+           width=0.95)
+
+    # Same x-axis treatment as the first figure
+    ax.set_xticks(x_positions_d)
+    ax.set_xticklabels(x_labels_d, fontsize=14, rotation=0, ha='center')
+    ax.set_xlabel('Channel index (grouped by movement)',
+                  fontsize=20, fontweight='bold')
+    ax.tick_params(axis='y', labelsize=14)
+    ax.set_xlim(x_positions_d[0] - 0.6, x_positions_d[-1] + 0.6)
+    ax.margins(x=0)
+
+    # Movement-group separators
+    for k in range(1, n_motions):
+        ax.axvline(x=k * group_size - 1, color='gray',
+                   linestyle='--', linewidth=1.5, alpha=0.5)
+
+    # Y-axis: deviation values are signed and typically smaller in magnitude
+    # than raw weights, so we keep the same scientific-notation formatter.
+    ax.set_ylabel(
+        f'(Motion mean − Global mean) ± Std (MP{mp_idx + 1})',
+        fontsize=20, fontweight='bold',
+    )
+    ax.ticklabel_format(axis='y', style='sci', scilimits=(0, 0),
+                        useMathText=True)
+    ax.yaxis.get_offset_text().set_fontsize(13)
+    ax.set_title(
+        f'MP{mp_idx + 1} Weight Deviation From Global Mean: '
+        f'{len(channel_idxs)} channels × {n_motions} movements',
+        fontsize=22, fontweight='bold', pad=20,
+    )
+
+    # Same two legends as the first figure (reuse the handle lists)
+    leg_idx_d = ax.legend(
+        handles=index_handles,
+        loc='upper left', bbox_to_anchor=(0.0, -0.12),
+        ncol=3,
+        fontsize=15, framealpha=0.9,
+        title='Channel index', title_fontsize=16,
+        borderaxespad=0, handlelength=0, handletextpad=0,
+        columnspacing=1.2,
+    )
+    ax.add_artist(leg_idx_d)
+    ax.legend(
+        handles=motion_handles,
+        loc='upper right', bbox_to_anchor=(1.0, -0.12),
+        ncol=4,
+        fontsize=15, framealpha=0.9,
+        title='Movements', title_fontsize=16,
+        borderaxespad=0, columnspacing=1.5, handletextpad=0.6,
+    )
+
+    ax.grid(axis='y', alpha=0.3, linestyle='--', linewidth=0.7)
+    ax.set_axisbelow(True)
+    # The zero line now represents the GLOBAL average — drawn slightly thicker
+    # so the "above / below average" reading is unambiguous.
+    ax.axhline(y=0, color='black', linewidth=1.2, linestyle='-')
+    y_min_d, y_max_d = ax.get_ylim()
+    y_range_d = y_max_d - y_min_d
+    ax.set_ylim(y_min_d - y_range_d * 0.05, y_max_d + y_range_d * 0.1)
+
+    plt.tight_layout()
+    fname_dev = (f"{save_dir}/MP{mp_idx + 1}_subset_deviation_"
+                 f"{'_'.join(channel_labels)}.png")
+    plt.savefig(fname_dev, dpi=200, bbox_inches='tight', facecolor='white')
+    plt.savefig(fname_dev.replace('.png', '.svg'),
+                bbox_inches='tight', facecolor='white')
+    plt.close()
+    print(f"Saved: {fname_dev}")
+
+    # Also persist the global-mean reference vector to disk so the deviation
+    # figure is fully reproducible from the CSV alone.
+    np.savetxt(
+        f"{save_dir}/MP{mp_idx + 1}_subset_global_means_"
+        f"{'_'.join(channel_labels)}.csv",
+        np.column_stack([np.arange(1, n_channels + 1), global_means]),
+        delimiter=',',
+        header='channel_index,global_mean',
+        fmt=['%d', '%.10e'],
+        comments='',
+    )
+
     return fname
 
 
