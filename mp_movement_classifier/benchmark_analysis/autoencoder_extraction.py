@@ -670,7 +670,7 @@ def main():
         n_epochs=CONFIG['n_epochs'],
         lr=CONFIG['lr'],
         device=CONFIG['device'],
-        save_path=MODEL_SAVE_DIR / 'best_autoencoder.pt'
+        save_path = MODEL_SAVE_DIR / f"best_autoencoder_{'lstm' if CONFIG['use_lstm'] else 'mlp'}.pt"
     )
 
     # Plot training curves

@@ -2,6 +2,12 @@
 
 Temporal Movement Primitives (TMP) extraction and multi‑model classification from motion capture data, with unified analysis across TMP, Autoencoder, and Legendre features.
 
+## Author
+
+Arefeh Farahmandi — Centre for Neuroscience Studies, Queen's University.
+
+This repository is part of my PhD project on computational analysis of human movement, comparing temporal movement primitives, polynomial bases, and autoencoder representations for activity classification and motion reconstruction.
+
 ## What’s inside
 - TMP (Temporal Movement Primitives): feature extraction and reconstruction.
 - Autoencoder: temporal AE for sequence embeddings (latent vectors).
