@@ -665,6 +665,10 @@ def main():
 
     # Step 4: Train autoencoder
     print("\n[4/7] Training autoencoder...")
+    import time as _time
+    import platform as _platform
+    import json as _json
+    _train_t0 = _time.perf_counter()
     model, train_losses, val_losses = train_autoencoder(
         model, train_loader, val_loader,
         n_epochs=CONFIG['n_epochs'],
@@ -672,6 +676,28 @@ def main():
         device=CONFIG['device'],
         save_path = MODEL_SAVE_DIR / f"best_autoencoder_{'lstm' if CONFIG['use_lstm'] else 'mlp'}.pt"
     )
+    _train_elapsed_s = _time.perf_counter() - _train_t0
+    # Persist the wall-clock training time alongside the checkpoint so the
+    # ``computational_cost.py`` script can read it without us having to
+    # remember a number from the console log.
+    _timing_json = MODEL_SAVE_DIR / "ae_training_time.json"
+    _timing_payload = {
+        "total_training_seconds": _train_elapsed_s,
+        "total_training_minutes": _train_elapsed_s / 60.0,
+        "n_epochs_actual": len(train_losses),     # early stopping may end < n_epochs_max
+        "n_epochs_max": CONFIG['n_epochs'],
+        "patience": 15,                            # matches train_autoencoder default
+        "use_lstm": CONFIG['use_lstm'],
+        "hidden_dim": CONFIG['hidden_dim'],
+        "latent_dim": CONFIG['latent_dim'],
+        "device": CONFIG['device'],
+        "hardware": f"{_platform.machine()} | {_platform.processor() or _platform.system()}",
+    }
+    with open(_timing_json, "w") as _f:
+        _json.dump(_timing_payload, _f, indent=2)
+    print(f"[timing] AE training wall-clock = {_train_elapsed_s:.1f} s "
+          f"({_train_elapsed_s/60.0:.2f} min) over {len(train_losses)} epochs")
+    print(f"[timing] Wrote: {_timing_json}")
 
     # Plot training curves
     fig = plot_training_curves(train_losses, val_losses)

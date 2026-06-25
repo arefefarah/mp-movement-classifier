@@ -769,7 +769,7 @@ def run_aic_comparison(
             'log_likelihood_cv': round(data['log_likelihood'], 4),
             'AIC': round(data['aic'], 4),
             'delta_AIC': round(delta_i, 4),
-            'p_i': round(p_i, 6),
+            'p_i': p_i, #round(p_i, 6),
             'evidence_Burnham_Anderson_2004': evidence,
         })
 

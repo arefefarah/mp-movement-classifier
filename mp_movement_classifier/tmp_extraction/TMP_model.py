@@ -149,7 +149,7 @@ class MP_model(torch.nn.Module):
     def predict_one_segment(self,seg_len,segidx,all_mps=None,as_numpy=False):
         """Predict one segment of length seg_len with supplied weights[signal,MP]"""
         if all_mps is None:
-            all_mps=self.get_mps_as_tensor()
+            all_mps=self._get_mps_as_tensor()
 
         if seg_len not in self.resampling_matrix:
             if self.gpu:

@@ -106,10 +106,35 @@ def train_and_save(
         bfgs_steps: int,
 ) -> None:
     print(f"Training model: ADAM steps={adam_steps}, BFGS steps={bfgs_steps}")
+    import time as _time
+    import platform as _platform
+    import json as _json
+    _t0 = _time.perf_counter()
     model.learn(processed_data, adam_steps=adam_steps, bfgs_steps=bfgs_steps)
-    print("Training complete. Saving model...")
+    _elapsed_s = _time.perf_counter() - _t0
+    print(f"Training complete in {_elapsed_s:.1f} s "
+          f"({_elapsed_s/60.0:.2f} min). Saving model...")
     save_model_with_full_state(model, model_path)
     print(f"Model saved to: {model_path}")
+
+    # Persist wall-clock training time alongside the checkpoint so the
+    # ``computational_cost.py`` script can read it without us having to
+    # remember a number from the console log.
+    _timing_json = os.path.join(os.path.dirname(model_path), "tmp_training_time.json")
+    _timing_payload = {
+        "total_training_seconds": _elapsed_s,
+        "total_training_minutes": _elapsed_s / 60.0,
+        "adam_steps": adam_steps,
+        "bfgs_steps": bfgs_steps,
+        "num_t_points": model.num_t_points,
+        "num_MPs": model.num_MPs,
+        "num_segments": len(processed_data),
+        "num_signals": processed_data[0].shape[0],
+        "hardware": f"{_platform.machine()} | {_platform.processor() or _platform.system()}",
+    }
+    with open(_timing_json, "w") as _f:
+        _json.dump(_timing_payload, _f, indent=2)
+    print(f"[timing] Wrote: {_timing_json}")
 
 
 def evaluate_and_plot(

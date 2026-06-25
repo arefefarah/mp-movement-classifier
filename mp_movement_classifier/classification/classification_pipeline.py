@@ -108,17 +108,21 @@ def _plot_confusion_matrix_percent(
     labels = _resolve_class_labels(labels)
 
     # ── 0.  Central font-size config ────────────────────────────────────────
+    # Bumped by ~1.5× across the board (from 14/13/14/16 → 21/20/21/24) so
+    # every piece of text in the confusion matrix is readable at small
+    # manuscript scaling.
     FONT = dict(
-        annot=14,  # numbers inside each cell
-        tick=13,  # class names on both axes
-        label=14,  # "Predicted" / "True"
-        title=16,  # "Confusion Matrix"
+        annot=22,  # numbers inside each cell        (was 14)
+        tick=30,   # class names on both axes        (was 13)
+        label=30,  # "Predicted" / "True"            (was 14)
+        title=30,  # "Confusion Matrix"              (was 16)
     )
 
-    # Bumped from (9, 7) so that the longer motion-name tick labels don't
-    # eat into the heatmap area — keeps cell size (and annotation font fit)
-    # the same as before names were resolved.
-    fig, ax = plt.subplots(figsize=(11.5, 9))
+    # Figure size scaled by the same ~1.5× as the fonts so the cells stay
+    # roughly the same on-page size relative to the labels. Aspect ratio
+    # 17 / 13.5 ≈ 1.26 ≈ previous 11.5 / 9 = 1.28, so the heatmap shape
+    # is preserved.
+    fig, ax = plt.subplots(figsize=(17, 13.5))
     annot = np.where(cm_norm == 0, "", cm_norm.round(2).astype(str))
 
     # ── 1.  Cell annotation font ─────────────────────────────────────────────

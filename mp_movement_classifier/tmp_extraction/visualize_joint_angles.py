@@ -177,8 +177,10 @@ def visualize_segment_boundaries(motions_to_visualize, data, id_to_motion_name, 
             columns = [col for col in motion_df.columns if col.startswith(joint_name)]
 
             ax = axes[i]
+            # All fonts ≥ 12 pt to match the single-joint figure and stay
+            # legible when scaled down into a manuscript column.
             ax.set_title(f'{motion_name}, {joint_name} Joint rep with Motion Segments',
-                         fontsize=16, fontweight='bold')
+                         fontsize=20, fontweight='bold')
 
             # Plot each rotation channel
             for idx,column in enumerate(columns):
@@ -201,9 +203,10 @@ def visualize_segment_boundaries(motions_to_visualize, data, id_to_motion_name, 
                            label=f'Segment {j + 1}')
                 j=j+1
 
-            ax.set_xlabel('Time (seconds)', fontsize=12)
-            ax.set_ylabel('Angle (degrees)', fontsize=12)
-            ax.legend(fontsize=10, loc='upper right')
+            ax.set_xlabel('Time (seconds)', fontsize=16)
+            ax.set_ylabel('Angle (degrees)', fontsize=16)
+            ax.tick_params(axis='both', labelsize=14)
+            ax.legend(fontsize=14, loc='upper right')
             ax.grid(True, alpha=0.3)
             ax.set_xlim(0, time_vector[-1])
 
@@ -226,11 +229,22 @@ def plot_single_joint_boundaries(data, id_to_motion_name, frame_time, folder_pat
     time_vector = np.arange(motion_df.shape[0]) * frame_time
     columns = [col for col in motion_df.columns if col.startswith(joint_name)]
 
+    # ── Central font-size config ─────────────────────────────────────────────
+    # All values are ≥ 12 pt so the figure remains legible even when scaled
+    # down to a paper column. Sized in a single dict so future tweaks are
+    # one line.
+    FONT = dict(
+        title=30,   # "{motion} – {joint} Joint with Motion Segments"
+        label=28,   # x/y axis labels
+        tick=24,    # x/y tick labels
+        legend=18,  # legend body
+    )
+
     # ── Design big so when scaled down in Affinity fonts stay readable ────────
     fig, ax = plt.subplots(figsize=(20, 6))
 
     ax.set_title(f'{motion_name} – {joint_name} Joint with Motion Segments',
-                 fontsize=24, fontweight='bold')
+                 fontsize=FONT['title'], fontweight='bold')
 
     channel_colors = ['red', 'green', 'blue', 'orange', 'purple', 'brown']
     for idx, column in enumerate(columns):
@@ -260,13 +274,13 @@ def plot_single_joint_boundaries(data, id_to_motion_name, frame_time, folder_pat
                    color=segment_colors[j], alpha=0.2,
                    label=f'Segment {j + 1}')
 
-    ax.set_xlabel('Time (seconds)', fontsize=22)
-    ax.set_ylabel('Angle (degrees)', fontsize=22)
-    ax.tick_params(axis='both', labelsize=20)
+    ax.set_xlabel('Time (seconds)', fontsize=FONT['label'])
+    ax.set_ylabel('Position (meters)', fontsize=FONT['label'])
+    ax.tick_params(axis='both', labelsize=FONT['tick'])
     ax.grid(True, alpha=0.3)
     ax.set_xlim(0, x_max)   # enforces the 10s cap on the plot
 
-    ax.legend(fontsize=18,
+    ax.legend(fontsize=FONT['legend'],
               loc='upper left',
               bbox_to_anchor=(0, -0.15),   # below the plot instead of beside it
               borderaxespad=0,
@@ -276,9 +290,16 @@ def plot_single_joint_boundaries(data, id_to_motion_name, frame_time, folder_pat
 
     seg_dir = os.path.join(figures_dir, "segmentation_boundaries")
     os.makedirs(seg_dir, exist_ok=True)
-    out_path = os.path.join(seg_dir, f"{motion}_{joint_name}.svg")
-    plt.savefig(out_path, format='svg', dpi=150, bbox_inches='tight')
-    print(f"Saved: {out_path}")
+    # Save both SVG and PNG so the figure can drop directly into the
+    # manuscript without an extra conversion step. ``bbox_inches='tight'``
+    # crops both consistently to their actual content.
+    svg_path = os.path.join(seg_dir, f"{motion}_{joint_name}.svg")
+    png_path = os.path.join(seg_dir, f"{motion}_{joint_name}.png")
+    plt.savefig(svg_path, format='svg', bbox_inches='tight', facecolor='white')
+    plt.savefig(png_path, format='png', dpi=300, bbox_inches='tight',
+                facecolor='white')
+    print(f"Saved: {svg_path}")
+    print(f"Saved: {png_path}")
     plt.close()
 
 def set_camera_view(fig, view='right'):
@@ -566,7 +587,8 @@ def main():
     id_to_motion_name = {id_val: motion_name for motion_name, id_val in motion_mapping.items()}
 
     motions_to_visualize = [
-        "subject_25_motion_14","subject_34_motion_12","subject_15_motion_07","subject_52_motion_01"
+        "subject_9_motion_02", "subject_9_motion_05",
+        # "subject_25_motion_14","subject_34_motion_12","subject_15_motion_07","subject_52_motion_01"
         # "subject_4_motion_05","subject_1_motion_03"  #crawling and cross leg sitting
         # "subject_23_motion_13", "subject_8_motion_09","subject_5_motion_02","subject_5_motion_06",
         # "subject_1_motion_03","subject_25_motion_14","subject_5_motion_12","subject_18_motion_08",
@@ -589,16 +611,16 @@ def main():
     # visualize_segment_boundaries(motions_to_visualize, data, id_to_motion_name, folder_path, figures_dir, frame_time)
 
     # plot segments for figure in paper
-    # plot_single_joint_boundaries(
-    #     data,id_to_motion_name, frame_time, folder_path, figures_dir,
-    #     motion=motions_to_visualize[0],
-    #     joint_name="LAnkle",
-    # )
+    plot_single_joint_boundaries(
+        data,id_to_motion_name, frame_time, folder_path, figures_dir,
+        motion=motions_to_visualize[1],
+        joint_name="LAnkle",
+    )
 
 
     # rotate camera view to right so that the front of subject can be seen
-    for motion in motions_to_visualize:
-        create_animation(motion_file_stem=motion, camera_view='right')
+    # for motion in motions_to_visualize:
+    #     create_animation(motion_file_stem=motion, camera_view='right')
 
     # plot different represenation of motion trajectory
     # plot_diff_representations(  "subject_4_motion_05", joint_names)
