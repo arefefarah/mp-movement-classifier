@@ -4,10 +4,13 @@ Temporal Movement Primitives (TMP) extraction and multi‑model classification f
 
 ## Author
 
-Arefeh Farahmandi — Centre for Neuroscience Studies, Queen's University.
+Arefeh Farahmandi ([Contact me](mailto:21afna@queensu.ca)), Centre for Neuroscience Studies, Queen's University. 
 
 This repository is part of my PhD project on computational analysis of human movement, comparing temporal movement primitives, polynomial bases, and autoencoder representations for activity classification and motion reconstruction.
 
+![recontructed motion](motion_17_reconstrcuted_from_tmp.gif)
+
+*One example of reconstructed motion(sitting down) by TMP model*
 ## What’s inside
 - TMP (Temporal Movement Primitives): feature extraction and reconstruction.
 - Autoencoder: temporal AE for sequence embeddings (latent vectors).
@@ -55,7 +58,7 @@ python run_classification_all_models.py \
   --tmp-model-dir ../../results/tmp_configs/new_seg_mp_model_5_phase_three \
   --ae-model-path ../../results/tmp_configs/new_seg_mp_model_5_phase_three/autoencoder_analysis/models/best_autoencoder.pt \
   --legendre-out-dir  ../../results/tmp_configs/new_seg_mp_model_5_phase_three/legendre_analysis \
-  --primary-classifier random_forest --seed 42
+  --primary-classifier random_forest --seed 42 --run-aic
 ```
 Notes:
 - To disable the secondary RandomForest run, pass `--rf 0`.
