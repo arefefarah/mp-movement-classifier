@@ -16,8 +16,6 @@ from sklearn.manifold import TSNE
 from sklearn.model_selection import cross_val_score
 from sklearn.decomposition import PCA
 from pathlib import Path
-from mp_movement_classifier.utils import config
-from mp_movement_classifier.classification.utils import calculate_rdm
 from mp_movement_classifier.classification.classification_pipeline import run_classification_pipeline
 from mp_movement_classifier.tmp_extraction.weights_analysis import load_motion_mapping
 from mp_movement_classifier.utils.utils import (
@@ -692,7 +690,6 @@ def main():
     out_dir = os.path.join(model_dir, "legendre_analysis")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    # folder_path = "./../../data/pymotion_exponential_csv_files"
     folder_path = "./../../data/pymotion_position_csv_files"
     motion_ids, processed_segments, segment_motion_ids = process_motion_data(folder_path=folder_path,
                                                                              data_type = "position",

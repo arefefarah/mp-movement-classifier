@@ -315,10 +315,16 @@ def summarize_per_class(df: pd.DataFrame) -> pd.DataFrame:
 
 # Consistent palette across all figures so a reviewer sees the same color
 # mean the same strategy in every panel of the paper.
+# Strategy palette — kept in lockstep with
+# ``run_classification_all_models._plot_cross_validation_comparison`` so the
+# manuscript shows the same colour for the same strategy across the
+# classification CV figure, the PCA/LDA combined figures, and the
+# reconstruction-analysis figures. Update both places together if the
+# project-wide palette ever changes.
 STRATEGY_COLORS = {
-    "TMP":         "#1f77b4",
-    "Legendre":    "#2ca02c",
-    "Autoencoder": "#ff7f0e",
+    "TMP":         "#3498db",   # sky blue   (was #1f77b4)
+    "Legendre":    "#2ecc71",   # emerald    (was #2ca02c)
+    "Autoencoder": "#e74c3c",   # coral red  (was #ff7f0e)
 }
 
 # All text in the reconstruction figures uses these sizes (in points).

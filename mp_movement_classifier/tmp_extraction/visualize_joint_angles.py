@@ -17,7 +17,10 @@ from pathlib import Path
 from scipy.spatial.transform import Rotation as R
 import webbrowser
 import os
+from collections import defaultdict
 from pymotion.render.viewer import Viewer
+
+from mp_movement_classifier.utils.utils import process_motion_data
 
 
 def run_patched(self, debug=True, use_reloader=None):
@@ -570,6 +573,190 @@ def plot_diff_representations(motion_file_stem,joint_names):
     print(f"\nAll plots saved to: {save_dir}")
 
 
+def plot_coordinate_trajectories(
+        motions,
+        boundaries_json,
+        id_to_motion_name,
+        folder_path,
+        figures_dir,
+        frame_time,
+        joint_names,
+        segment_idx=0,
+):
+    """
+    Dataset-overview plot: joint-position coordinate trajectories for ONE
+    subject performing several different motion categories.
+
+    Layout: a grid with one row per motion and three columns (X, Y, Z). Each
+    cell overlays all 16 joint trajectories for that (motion, coordinate),
+    one colour per joint, with a single shared legend below.
+
+    Parameters
+    ----------
+    motions : list[str]
+    boundaries_json : dict
+        Parsed segments_index.json (file stem -> [[start, end], ...]).
+        Each motion is cropped to one movement cycle (``segment_idx``).
+    segment_idx : int
+        Which segment (movement cycle) of each recording to show.
+    """
+    if isinstance(motions, str):
+        motions = [motions]
+
+    axis_labels = ['x', 'y', 'z']
+    colors = plt.cm.tab20(np.linspace(0, 1, len(joint_names)))
+    FONT = dict(coltitle=18, rowlabel=15, label=15, tick=12, legend=12, suptitle=20)
+
+    n_rows = len(motions)
+    fig, axes = plt.subplots(
+        n_rows, 3,
+        figsize=(15, max(2.6 * n_rows, 3.2)),
+        squeeze=False,
+    )
+
+    for r, motion in enumerate(motions):
+        filename = motion + ".csv"
+        motion_id_str = motion.split('_')[-1]
+        motion_name = id_to_motion_name.get(int(motion_id_str), motion_id_str)
+        csv_path = os.path.join(Path(folder_path), filename)
+        motion_df = pd.read_csv(csv_path)
+
+        # Crop to a single movement cycle when boundaries are available.
+        boundaries = boundaries_json.get(motion)
+        if boundaries and segment_idx < len(boundaries):
+            b = boundaries[segment_idx]
+            seg_df = motion_df.iloc[b[0]:b[1], :].reset_index(drop=True)
+        else:
+            seg_df = motion_df
+
+        n_frames = seg_df.shape[0]
+        time_vector = np.arange(n_frames) * frame_time
+
+        for c in range(3):
+            ax = axes[r][c]
+            for j, joint_name in enumerate(joint_names):
+                col = f"{joint_name}_{axis_labels[c]}"
+                if col not in seg_df.columns:
+                    continue
+                ax.plot(time_vector, seg_df[col],
+                        color=colors[j], linewidth=1.2, alpha=0.85,
+                        label=joint_name)
+            ax.tick_params(axis='both', labelsize=FONT['tick'])
+            ax.grid(True, alpha=0.3)
+            ax.set_xlim(0, time_vector[-1] if n_frames > 1 else 1)
+
+            # Column titles only on the top row.
+            if r == 0:
+                ax.set_title(f'{axis_labels[c].upper()} position (m)',
+                             fontsize=FONT['coltitle'], fontweight='bold')
+            # Time axis label only on the bottom row.
+            if r == n_rows - 1:
+                ax.set_xlabel('Time (s)', fontsize=FONT['label'])
+
+        # Motion name as the row label on the leftmost cell.
+        axes[r][0].set_ylabel(motion_name, fontsize=FONT['rowlabel'],
+                              fontweight='bold')
+
+    fig.suptitle('Joint-position trajectories across motions',
+                 fontsize=FONT['suptitle'], fontweight='bold', y=0.998)
+
+    # Single shared legend below the grid.
+    handles, labels = axes[0][0].get_legend_handles_labels()
+    fig.legend(handles, labels,
+               loc='lower center', bbox_to_anchor=(0.5, -0.02),
+               ncol=8, fontsize=FONT['legend'], frameon=True, framealpha=0.9)
+
+    fig.tight_layout(rect=[0, 0.03, 1, 0.98])
+
+    traj_dir = os.path.join(figures_dir, "coordinate_trajectories")
+    os.makedirs(traj_dir, exist_ok=True)
+    out_png = os.path.join(traj_dir, "subjects_trajectories_across_motions.png")
+    out_svg = os.path.join(traj_dir, "subjects_trajectories_across_motions.svg")
+    plt.savefig(out_png, dpi=300, bbox_inches='tight', facecolor='white')
+    plt.savefig(out_svg, bbox_inches='tight', facecolor='white')
+    plt.close()
+    print(f"Saved: {out_png}")
+    print(f"Saved: {out_svg}")
+
+
+def plot_segment_duration_barplot(
+        folder_path,
+        id_to_motion_name,
+        figures_dir,
+        frame_time,
+        data_type="position",
+):
+    """
+    Dataset-overview plot: segment temporal length per motion category.
+
+    Loads every segment across all subjects (via process_motion_data),
+    converts each segment length to seconds, and draws one bar per motion
+    showing the mean duration with an error bar (± std across segments of
+    that motion). Bars are sorted by mean duration so the figure reads as a
+    gradient, and the per-motion segment count is annotated above each bar.
+    """
+    motion_ids, processed_segments, segment_motion_ids = process_motion_data(
+        folder_path=folder_path, data_type=data_type, filtering=False,
+    )
+
+    # Group segment durations (seconds) by motion id.
+    durations = defaultdict(list)
+    for seg, mid in zip(processed_segments, segment_motion_ids):
+        # seg shape is [signals, time]; time dimension = number of frames.
+        durations[int(mid)].append(seg.shape[1] * frame_time)
+
+    # Build sorted (by mean duration) arrays for plotting.
+    stats = []
+    for mid, durs in durations.items():
+        durs = np.asarray(durs, dtype=float)
+        stats.append((
+            id_to_motion_name.get(mid, str(mid)),
+            durs.mean(),
+            durs.std(),
+            len(durs),
+        ))
+    stats.sort(key=lambda t: t[1])  # ascending by mean duration
+    names = [s[0] for s in stats]
+    means = np.array([s[1] for s in stats])
+    stds = np.array([s[2] for s in stats])
+    counts = [s[3] for s in stats]
+
+    FONT = dict(title=18, label=15, tick=13, annot=11)
+
+    fig, ax = plt.subplots(figsize=(14, 6))
+    x = np.arange(len(names))
+    ax.bar(x, means, yerr=stds, capsize=4,
+           color='#4C72B0', edgecolor='black', linewidth=0.6, alpha=0.85)
+
+    # Annotate the number of segments above each bar.
+    for xi, m, s, n in zip(x, means, stds, counts):
+        ax.text(xi, m + s + 0.02 * means.max(), f"n={n}",
+                ha='center', va='bottom', fontsize=FONT['annot'], color='0.25')
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(names, rotation=45, ha='right', fontsize=FONT['tick'])
+    ax.set_ylabel('Segment duration (s)', fontsize=FONT['label'], fontweight='bold')
+    ax.set_xlabel('Motion category', fontsize=FONT['label'], fontweight='bold')
+    ax.set_title('Segment duration per motion category (mean ± std)',
+                 fontsize=FONT['title'], fontweight='bold')
+    ax.tick_params(axis='y', labelsize=FONT['tick'])
+    ax.grid(axis='y', alpha=0.3, linestyle='--', linewidth=0.7)
+    ax.set_axisbelow(True)
+
+    fig.tight_layout()
+    out_png = os.path.join(figures_dir, "segment_duration_per_motion.png")
+    out_svg = os.path.join(figures_dir, "segment_duration_per_motion.svg")
+    plt.savefig(out_png, dpi=300, bbox_inches='tight', facecolor='white')
+    plt.savefig(out_svg, bbox_inches='tight', facecolor='white')
+    plt.close()
+
+    total = sum(counts)
+    print(f"Saved: {out_png}")
+    print(f"Saved: {out_svg}")
+    print(f"  ({total} segments across {len(names)} motions; "
+          f"overall mean = {means.mean():.2f} s)")
+
+
 def main():
     joint_names = [
         'Hip', 'RHip', 'RKnee', 'RAnkle', 'LHip', 'LKnee', 'LAnkle',
@@ -587,7 +774,8 @@ def main():
     id_to_motion_name = {id_val: motion_name for motion_name, id_val in motion_mapping.items()}
 
     motions_to_visualize = [
-        "subject_9_motion_02", "subject_9_motion_05",
+        "subject_9_motion_02",
+        # "subject_9_motion_05",
         # "subject_25_motion_14","subject_34_motion_12","subject_15_motion_07","subject_52_motion_01"
         # "subject_4_motion_05","subject_1_motion_03"  #crawling and cross leg sitting
         # "subject_23_motion_13", "subject_8_motion_09","subject_5_motion_02","subject_5_motion_06",
@@ -611,11 +799,41 @@ def main():
     # visualize_segment_boundaries(motions_to_visualize, data, id_to_motion_name, folder_path, figures_dir, frame_time)
 
     # plot segments for figure in paper
-    plot_single_joint_boundaries(
-        data,id_to_motion_name, frame_time, folder_path, figures_dir,
-        motion=motions_to_visualize[1],
-        joint_name="LAnkle",
+    # plot_single_joint_boundaries(
+    #     data,id_to_motion_name, frame_time, folder_path, figures_dir,
+    #     motion=motions_to_visualize[1],
+    #     joint_name="LAnkle",
+    # )
+
+    # ── Dataset-overview plot 1: coordinate trajectories for ONE subject
+    #    across several different motions. One figure, grid = rows (motions)
+    #    × cols (X/Y/Z), all 16 joints overlaid per cell. List the motion
+    #    files for a single subject.
+    subject_motions = [
+        "subject_16_motion_02", "subject_17_motion_05","subject_13_motion_18","subject_12_motion_17",
+        "subject_13_motion_11","subject_12_motion_09","subject_31_motion_08","subject_21_motion_03",
+        "subject_32_motion_00","subject_12_motion_06","subject_15_motion_01", "subject_10_motion_12",
+        "subject_13_motion_07","subject_12_motion_13","subject_13_motion_10","subject_12_motion_14",
+    ]
+    plot_coordinate_trajectories(
+        motions=subject_motions,
+        boundaries_json=data,
+        id_to_motion_name=id_to_motion_name,
+        folder_path=folder_path,
+        figures_dir=figures_dir,
+        frame_time=frame_time,
+        joint_names=['LWrist'], #joint_names
+        segment_idx=0,
     )
+
+    # ── Dataset-overview plot 2: segment duration per motion (one bar per
+    #    motion, mean ± std across all segments of that motion).
+    # plot_segment_duration_barplot(
+    #     folder_path=folder_path,
+    #     id_to_motion_name=id_to_motion_name,
+    #     figures_dir=figures_dir,
+    #     frame_time=frame_time,
+    # )
 
 
     # rotate camera view to right so that the front of subject can be seen
