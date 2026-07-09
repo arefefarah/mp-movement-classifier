@@ -605,6 +605,7 @@ def plot_coordinate_trajectories(
 
     axis_labels = ['x', 'y', 'z']
     colors = plt.cm.tab20(np.linspace(0, 1, len(joint_names)))
+    colors = ['b','r']
     FONT = dict(coltitle=18, rowlabel=15, label=15, tick=12, legend=12, suptitle=20)
 
     n_rows = len(motions)
@@ -657,7 +658,7 @@ def plot_coordinate_trajectories(
         axes[r][0].set_ylabel(motion_name, fontsize=FONT['rowlabel'],
                               fontweight='bold')
 
-    fig.suptitle('Joint-position trajectories across motions',
+    fig.suptitle('Right and Left wrist Joint position trajectories across motions',
                  fontsize=FONT['suptitle'], fontweight='bold', y=0.998)
 
     # Single shared legend below the grid.
@@ -822,7 +823,7 @@ def main():
         folder_path=folder_path,
         figures_dir=figures_dir,
         frame_time=frame_time,
-        joint_names=['LWrist'], #joint_names
+        joint_names=['LWrist','RWrist'], #joint_names
         segment_idx=0,
     )
 
